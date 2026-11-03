@@ -1,0 +1,33 @@
+# .gitlab-ci.yml
+# ClawProbe 安卓隐私合规发版门禁 (GitLab CI 标准模板)
+# 文档与凭据申请: https://www.atooli.com/#docs-cli
+
+stages:
+  - build
+  - compliance_gate
+
+clawprobe_privacy_gate:
+  stage: compliance_gate
+  image: python:3.11-slim
+  variables:
+    APK_PATH: "app/build/outputs/apk/release/app-release.apk"
+  before_script:
+    - pip install --no-cache-dir -U --extra-index-url https://www.atooli.com/simple clawprobe
+    - clawprobe doctor
+  script:
+    # --fail-on-preconsent 会在检测到「未同意隐私政策前抢跑联网」时返回 Exit Code 2 并阻断流水线
+    - clawprobe analyze "$APK_PATH"
+        --attest-authorized
+        --mode privacy
+        --fail-on-preconsent
+        --queue-timeout 900
+        --out clawprobe-privacy-report.pdf
+        --json-out clawprobe-privacy-report.json
+        --reclaim
+  artifacts:
+    when: always
+    paths:
+      - clawprobe-privacy-report.pdf
+      - clawprobe-privacy-report.json
+    expire_in: 30 days
+  allow_failure: false
