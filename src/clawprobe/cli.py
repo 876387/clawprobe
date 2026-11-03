@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-`clawprobe` — Mobile Application 300s Live Dynamic Technical Inspection & CI/CD Privacy Gate CLI:
+`clawprobe` — Mobile Application APK Deep Analysis & 300s Live Dynamic Technical Inspection API Client:
   - `clawprobe doctor`
   - `clawprobe auth login --api-key cnx_live_xxx --secret sec_xxx [--endpoint https://www.atooli.com]`
   - `clawprobe auth verify`
-  - `clawprobe analyze ./app.apk --attest-authorized --mode privacy --fail-on-preconsent --reclaim --out ./report.pdf`
+  - `clawprobe analyze ./app.apk --attest-authorized --mode privacy --reclaim --out ./report.pdf`
   - `clawprobe job <job_id> [--out ./report.pdf] [--json-out ./report.json] [--bundle ./bundle.zip] [--reclaim]`
   - `clawprobe reclaim <job_id>`
 
 Exit Codes:
   - `0`: Completed cleanly (and 0 Stage-1 pre-consent flows when `--fail-on-preconsent` is set)
   - `1`: Usage, argument, file-not-found, or authentication/attestation error
-  - `2`: CI/CD Privacy Gate Triggered (`--fail-on-preconsent` set and Stage-1 pre-consent flows detected)
+  - `2`: Pre-consent alert triggered (`--fail-on-preconsent` set and Stage-1 pre-consent flows detected)
   - `3`: Quota or bound-package limit exceeded (`ERR_QUOTA_EXCEEDED` / `ERR_PACKAGE_QUOTA_EXCEEDED`)
   - `4`: Network, service unavailability, or sandbox queue timeout
 """
@@ -158,7 +158,7 @@ def _reclaim_job(client: ClawNexusClient, job_id: str) -> dict:
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="clawprobe",
-        description="ClawProbe APK 300s Live Dynamic Technical Inspection & CI/CD Privacy Gate CLI (v1.3)",
+        description="ClawProbe APK Deep Analysis & 300s Live Dynamic Technical Inspection API Client (v1.3)",
     )
     parser.add_argument("--version", action="version", version=f"clawprobe {__version__}")
     parser.add_argument("--endpoint", default=None, help=f"Gateway URL (default: {DEFAULT_PUBLIC_ENDPOINT})")
