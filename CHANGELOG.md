@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.3.2] - 2026-11-05
+
+### Added
+- Integrated the Open-Source Cross-Platform Desktop GUI Reference Demo (`desktop_client/` & `src/clawprobe/desktop.py`) directly into the `clawprobe` CLI package and wheel distribution (`clawprobe desktop` subcommand and `clawprobe-desktop` console entrypoint).
+- Added native macOS Cocoa + `WKWebView` Universal (`arm64` + `x86_64`) window host in `desktop_client/build_macos_dmg.py` and Windows x64 PyInstaller packaging script in `desktop_client/build_windows_exe.py`.
+- Added SHA-256 content-addressed instant deduplication ("秒传", 0-byte upload when server-side 24h CAS matches) and 300 MB chunked streaming upload across `ClawNexusClient`, `clawprobe analyze`, and `ClawProbe Desktop`.
+- Added OS Keychain credential storage (`MACOS_KEYCHAIN` via `/usr/bin/security` and `WINDOWS_PASSWORD_VAULT` via PowerShell `PasswordVault`) with automatic synchronization to `~/.clawnexus/credentials.json`.
+
 ## [1.3.1] - 2026-11-02
 
 ### Security & Compatibility

@@ -22,7 +22,7 @@ from clawprobe.client import (
 
 class TestClawProbeOffline(unittest.TestCase):
     def test_version_and_defaults(self):
-        self.assertEqual(__version__, "1.3.1")
+        self.assertEqual(__version__, "1.3.2")
         self.assertEqual(DEFAULT_PUBLIC_ENDPOINT, "https://www.atooli.com")
         self.assertGreaterEqual(len(DEFAULT_PINNED_SPKI_SHA256), 3)
         self.assertIn("BEGIN CERTIFICATE", EMBEDDED_PUBLIC_CA_CHAIN_PEM)
@@ -75,7 +75,7 @@ class TestClawProbeOffline(unittest.TestCase):
             text=True,
             check=True,
         )
-        self.assertIn("clawprobe 1.3.1", proc.stdout)
+        self.assertIn("clawprobe 1.3.2", proc.stdout)
 
     def test_desktop_demo_headless_self_test(self):
         proc = subprocess.run(
@@ -87,6 +87,15 @@ class TestClawProbeOffline(unittest.TestCase):
         )
         self.assertIn('"status": "ok"', proc.stdout)
         self.assertIn('"keychain_roundtrip_verified": true', proc.stdout)
+
+        proc_status = subprocess.run(
+            [sys.executable, "-m", "clawprobe", "desktop", "--status"],
+            cwd=str(SRC_DIR),
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        self.assertIn('"status":', proc_status.stdout)
 
         proc_script = subprocess.run(
             [sys.executable, str(ROOT_DIR / "desktop_client" / "clawprobe_desktop.py"), "--headless-self-test"],

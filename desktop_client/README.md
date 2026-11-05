@@ -25,8 +25,10 @@
 
 ### 方式 1：安装 `clawprobe` 后通过 CLI 子命令一键启动（推荐开发者）
 ```bash
-pip install -e .
+pip install -U clawprobe
 clawprobe desktop
+# 或直接运行独立入口命令：
+clawprobe-desktop
 ```
 
 ### 方式 2：直接运行跨平台单文件源码脚本（免打包、方便二次修改）
@@ -34,21 +36,24 @@ clawprobe desktop
 # 在仓库根目录下直接运行（Windows / macOS / Linux 通用）
 python3 desktop_client/clawprobe_desktop.py
 
+# 查看当前凭据与系统钥匙串状态
+clawprobe desktop --status
+
 # 运行系统钥匙串与代码片段生成自检
-python3 desktop_client/clawprobe_desktop.py --headless-self-test
+clawprobe desktop --headless-self-test
 ```
 
 ### 方式 3：自行打包 macOS `.dmg` 或 Windows `.exe` 独立发行版
-- **macOS 打包 `.app` 与 `.dmg` 镜像**（使用 macOS 原生 `hdiutil`）：
+- **macOS 打包原生 Cocoa `WKWebView` Universal `.app` 与 `.dmg` 镜像**（使用 macOS 原生 `clang` + `hdiutil`）：
   ```bash
   python3 desktop_client/build_macos_dmg.py
   # 产物输出至：desktop_client/dist/ClawProbe-Desktop-macOS.dmg
   ```
-- **Windows 10/11 (x64) 打包单文件 `.exe`**（使用 PyInstaller 或直接复用仓库 `.github/workflows/build-desktop-win64.yml`）：
+- **Windows 10/11 (x64) 打包单文件 `.exe`**（使用 `build_windows_exe.py` 或仓库 `.github/workflows/build-desktop-win64.yml`）：
   ```powershell
   pip install pyinstaller
-  pyinstaller --noconfirm --onefile --windowed --name "ClawProbe-Desktop-Win64" --paths src desktop_client/clawprobe_desktop.py
-  # 产物输出至：dist/ClawProbe-Desktop-Win64.exe
+  python desktop_client/build_windows_exe.py
+  # 产物输出至：desktop_client/dist/ClawProbe-Desktop-Win64.exe
   ```
 
 ---
@@ -57,7 +62,9 @@ python3 desktop_client/clawprobe_desktop.py --headless-self-test
 
 | 文件名 | 说明 |
 | :--- | :--- |
-| [`clawprobe_desktop.py`](./clawprobe_desktop.py) | 跨平台（Windows / macOS）桌面工作台完整单文件参考实现（含系统钥匙串、扫码轮询、卡密兑换、16 位恢复码、30s 快检与 300s 完整真机检测） |
-| [`build_macos_dmg.py`](./build_macos_dmg.py) | macOS `.app` 应用包与 `.dmg` 磁盘镜像自动化构建脚本 |
+| [`clawprobe_desktop.py`](./clawprobe_desktop.py) | 跨平台（Windows / macOS）桌面工作台完整单文件参考实现（含 300 MB 大包上传、SHA-256 极速秒传、系统钥匙串、扫码轮询、卡密兑换、16 位恢复码、30s 快检与 300s 完整真机检测） |
+| [`../src/clawprobe/desktop.py`](../src/clawprobe/desktop.py) | 集成在 `clawprobe` PyPI/Wheel 包内的 `clawprobe desktop` 子命令模块 |
+| [`build_macos_dmg.py`](./build_macos_dmg.py) | macOS Universal (`arm64` + `x86_64`) 原生 `WKWebView` `.app` 应用包与 `.dmg` 磁盘镜像构建脚本 |
+| [`build_windows_exe.py`](./build_windows_exe.py) | Windows 10/11 (x64) `ClawProbe-Desktop-Win64.exe` 单文件打包与 SHA-256 生成脚本 |
 | [`UNSIGNED_INSTALL_GUIDE.md`](./UNSIGNED_INSTALL_GUIDE.md) | 未捆绑商业代码签名证书（Unsigned）版本的 macOS Gatekeeper / Windows SmartScreen 放行指引 |
 | [`../.github/workflows/build-desktop-win64.yml`](../.github/workflows/build-desktop-win64.yml) | GitHub Actions 自动构建 `ClawProbe-Desktop-Win64.exe` 并校验 SHA-256 的 CI 工作流参考 |

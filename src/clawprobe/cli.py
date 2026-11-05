@@ -225,14 +225,23 @@ def main() -> None:
         "desktop",
         help="Launch the Open-Source Cross-Platform (Windows/macOS) Desktop GUI Reference Workbench Demo",
     )
+    p_desk.add_argument("--import-sub", default="", help="Import a cp_sub_v1_... subscription token into OS Keychain")
+    p_desk.add_argument("--status", action="store_true", help="Print current desktop credential & OS keychain status as JSON")
     p_desk.add_argument("--headless-self-test", action="store_true", help="Run system keychain & snippet generation self-test")
 
     args = parser.parse_args()
 
     if args.cmd == "desktop":
         from .desktop import launch_gui, main as desktop_main
+        desk_argv = ["clawprobe-desktop", "--endpoint", args.endpoint or DEFAULT_PUBLIC_ENDPOINT]
+        if getattr(args, "import_sub", ""):
+            sys.argv = desk_argv + ["--import-sub", args.import_sub]
+            sys.exit(desktop_main())
+        if getattr(args, "status", False):
+            sys.argv = desk_argv + ["--status"]
+            sys.exit(desktop_main())
         if getattr(args, "headless_self_test", False):
-            sys.argv = ["clawprobe-desktop", "--headless-self-test", "--endpoint", args.endpoint or DEFAULT_PUBLIC_ENDPOINT]
+            sys.argv = desk_argv + ["--headless-self-test"]
             sys.exit(desktop_main())
         launch_gui(initial_endpoint=args.endpoint or DEFAULT_PUBLIC_ENDPOINT)
         return
@@ -325,6 +334,11 @@ def main() -> None:
             sys.exit(1)
 
         job_id = sub_resp["job_id"]
+        if sub_resp.get("instant_dedup"):
+            print(
+                f"[clawprobe] ⚡ SHA-256 instant upload (0-byte deduplication) hit for job {job_id}!",
+                file=sys.stderr,
+            )
         if args.no_wait:
             print(json.dumps(sub_resp, indent=2, ensure_ascii=False))
             return
@@ -353,6 +367,7 @@ def main() -> None:
             "status": "ok",
             "report_title": rep.get("report_title"),
             "job_id": job_id,
+            "instant_dedup": bool(sub_resp.get("instant_dedup")),
             "package_name": rep.get("layer1_deterministic_network_ledger", {}).get("package_name"),
             "wall_time_sec": st_body.get("wall_time_sec"),
             "authorization_attestation": rep.get("report_metadata", {}).get("customer_authorization_attestation"),
