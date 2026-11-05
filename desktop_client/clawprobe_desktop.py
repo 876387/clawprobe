@@ -31,6 +31,7 @@ import argparse
 import base64
 import hashlib
 import http.server
+import inspect
 import json
 import mimetypes
 import os
@@ -52,25 +53,35 @@ from typing import Any
 
 THIS_DIR = Path(__file__).resolve().parent
 CODE_ROOT = THIS_DIR.parent
-if str(CODE_ROOT) not in sys.path:
-    sys.path.insert(0, str(CODE_ROOT))
-if (CODE_ROOT / "src").exists() and str(CODE_ROOT / "src") not in sys.path:
-    sys.path.insert(0, str(CODE_ROOT / "src"))
+for _p in (THIS_DIR, CODE_ROOT, CODE_ROOT / "src"):
+    if _p.exists():
+        _ps = str(_p)
+        if _ps in sys.path:
+            sys.path.remove(_ps)
+        sys.path.insert(0, _ps)
 
-try:
-    from clawprobe.client import (
-        ClawNexusClient,
-        DEFAULT_PINNED_SPKI_SHA256,
-        DEFAULT_PUBLIC_ENDPOINT as DEFAULT_ENDPOINT,
-        save_credentials as save_cli_credentials,
-    )
-except ImportError:
+if (THIS_DIR / "cli_sdk" / "common_client.py").exists() or (CODE_ROOT / "cli_sdk" / "common_client.py").exists():
     from cli_sdk.common_client import (
         ClawNexusClient,
         DEFAULT_PINNED_SPKI_SHA256,
         DEFAULT_PUBLIC_ENDPOINT as DEFAULT_ENDPOINT,
         save_credentials as save_cli_credentials,
     )
+else:
+    try:
+        from clawprobe.client import (
+            ClawNexusClient,
+            DEFAULT_PINNED_SPKI_SHA256,
+            DEFAULT_PUBLIC_ENDPOINT as DEFAULT_ENDPOINT,
+            save_credentials as save_cli_credentials,
+        )
+    except ImportError:
+        from cli_sdk.common_client import (
+            ClawNexusClient,
+            DEFAULT_PINNED_SPKI_SHA256,
+            DEFAULT_PUBLIC_ENDPOINT as DEFAULT_ENDPOINT,
+            save_credentials as save_cli_credentials,
+        )
 
 KEYCHAIN_SERVICE = "com.atooli.clawprobe.credentials"
 KEYCHAIN_ACCOUNT = "clawprobe_default"
@@ -1382,17 +1393,21 @@ def launch_gui(initial_endpoint: str = DEFAULT_ENDPOINT) -> None:
                         raw_apk = apk_p.read_bytes()
                         apk_sha = hashlib.sha256(raw_apk).hexdigest()
                         _append_log(f"🔍 正在校验 APK 指纹 (SHA256={apk_sha[:16]}...) 并通过 TLS 1.3 + HMAC-SHA256 签名提交任务...")
-                        code, sub_res = cli.upload_multipart(
-                            "/api/v1/inspect/submit",
-                            file_path=apk_p,
-                            fields={
+                        _upload_kwargs: dict[str, Any] = {
+                            "file_path": apk_p,
+                            "fields": {
                                 "mode": "privacy",
                                 "confidential": "false",
                                 "ttl_hours": "72",
                                 "authorization_attested": "true",
                                 "wait": "false",
                             },
-                            log_fn=_append_log,
+                        }
+                        if "log_fn" in inspect.signature(cli.upload_multipart).parameters:
+                            _upload_kwargs["log_fn"] = _append_log
+                        code, sub_res = cli.upload_multipart(
+                            "/api/v1/inspect/submit",
+                            **_upload_kwargs,
                         )
                         if code not in (200, 202) or not isinstance(sub_res, dict) or not sub_res.get("job_id"):
                             err_msg = sub_res.get("message") if isinstance(sub_res, dict) else str(sub_res)
@@ -1672,9 +1687,14 @@ def main() -> int:
         return 0
 
     if args.headless_self_test:
+        prev_kc = load_secret_from_system_keychain()
         sample_payload = json.dumps({"sign_secret": "sec_test_keychain_roundtrip_12345", "sub_token": "cp_sub_v1_test"})
-        ok_kc, backend = store_secret_in_system_keychain(sample_payload)
-        loaded = load_secret_from_system_keychain() if ok_kc else sample_payload
+        try:
+            ok_kc, backend = store_secret_in_system_keychain(sample_payload)
+            loaded = load_secret_from_system_keychain() if ok_kc else sample_payload
+        finally:
+            if prev_kc:
+                store_secret_in_system_keychain(prev_kc)
         snippets = generate_developer_integration_snippets(
             {"endpoint": args.endpoint, "api_key": "cp_live_selftest_001", "spki_pin": DEFAULT_PINNED_SPKI_SHA256[0]}
         )
