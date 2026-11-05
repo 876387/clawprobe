@@ -44,6 +44,34 @@ def build_macos_dmg() -> dict[str, str]:
         shutil.copy2(client_src, sdk_dir / "common_client.py")
         (sdk_dir / "__init__.py").write_text("", encoding="utf-8")
 
+        # Compile Universal (arm64 + x86_64) Native macOS Cocoa + WKWebView window binary
+        from clawprobe_desktop import MACOS_WKWEBVIEW_OBJC_SRC
+        objc_src = Path(tmp) / "ClawProbeNativeWindow.m"
+        objc_src.write_text(MACOS_WKWEBVIEW_OBJC_SRC, encoding="utf-8")
+        native_bin = macos_dir / "ClawProbeNativeWindow"
+        subprocess.run(
+            [
+                "/usr/bin/clang",
+                "-O2",
+                "-fobjc-arc",
+                "-arch",
+                "arm64",
+                "-arch",
+                "x86_64",
+                "-framework",
+                "Cocoa",
+                "-framework",
+                "WebKit",
+                str(objc_src),
+                "-o",
+                str(native_bin),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        os.chmod(native_bin, 0o755)
+
         # Launcher script in Contents/MacOS/ClawProbeDesktop
         launcher = macos_dir / "ClawProbeDesktop"
         launcher.write_text(

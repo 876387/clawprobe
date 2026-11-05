@@ -561,6 +561,7 @@ DESKTOP_HTML = """<!DOCTYPE html>
       <h3>🔑 卡密兑换 (`CP-...`) / 订阅串导入 (`cp_sub_v1_...`) / 恢复码找回 (`RCV-...`)</h3>
       <p style="color:var(--muted); font-size:12.5px;">支持直接输入 115 批次兑换卡密、官网扫码获得的订阅串、或 16 位账户恢复码，激活后签名密钥将自动存入 <strong>macOS 系统钥匙串 (Keychain)</strong>：</p>
       <input id="inpCodeOrToken" class="input" placeholder="粘贴 CP-XXXX-XXXX-XXXX 或 cp_sub_v1_... 或 RCV-XXXX-XXXX-XXXX" />
+      <div id="activateErrMsg" style="color:#f87171; font-size:12.5px; margin-top:4px; min-height:18px;"></div>
       <div class="btn-row" style="justify-content:flex-end;">
         <button class="btn btn-slate" onclick="closeModals()">取消</button>
         <button class="btn btn-primary" onclick="submitCodeOrToken()">立即激活并存入系统钥匙串</button>
@@ -761,7 +762,12 @@ async function createDesktopOrder(channel) {
 
 async function submitCodeOrToken() {
   const val = document.getElementById("inpCodeOrToken").value.trim();
-  if (!val) return;
+  const errEl = document.getElementById("activateErrMsg");
+  errEl.textContent = "";
+  if (!val) {
+    errEl.textContent = "请先粘贴卡密、订阅串或 16 位恢复码";
+    return;
+  }
   const r = await fetch("/api/local/activate", {
     method: "POST",
     headers: {"Content-Type": "application/json"},
@@ -769,8 +775,9 @@ async function submitCodeOrToken() {
   });
   const d = await r.json();
   if (d.status !== "ok") {
-    appendLog(`❌ 激活失败：${d.message || JSON.stringify(d)}`);
-    alert(d.message || "激活失败");
+    const msg = d.message || JSON.stringify(d);
+    appendLog(`❌ 激活失败：${msg}`);
+    errEl.textContent = `❌ ${msg}`;
     return;
   }
   closeModals();
@@ -784,16 +791,31 @@ function showRcvModal(code) {
   document.getElementById("rcvModal").classList.add("open");
 }
 
-function copyRcvAndClose() {
+async function copyTextNative(text) {
+  try {
+    await fetch("/api/local/copy-clipboard", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({text: text})
+    });
+  } catch (e) {}
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(text);
+    }
+  } catch (e) {}
+}
+
+async function copyRcvAndClose() {
   const v = document.getElementById("rcvCodeInput").value;
-  navigator.clipboard.writeText(v);
+  await copyTextNative(v);
   appendLog(`📋 已复制您的 16 位账户恢复码：${v}`);
   closeModals();
 }
 
-function copyReferral() {
+async function copyReferral() {
   const link = `https://www.atooli.com/?ref=${currentRefCode}`;
-  navigator.clipboard.writeText(link);
+  await copyTextNative(link);
   appendLog(`🎁 已复制您的专属老带新推荐链接：${link}（被邀请人实付单次卡送 +2 次、10次包 +5 次、包月 +10 次、包年 +20 次，有效期 50 天）`);
 }
 
@@ -1032,6 +1054,19 @@ def launch_gui(initial_endpoint: str = DEFAULT_ENDPOINT) -> None:
                 self._send_json({"status": "ok"})
                 return
 
+            if self.path == "/api/local/copy-clipboard":
+                txt = str(body.get("text") or "")
+                sys_name = platform.system()
+                try:
+                    if sys_name == "Darwin":
+                        subprocess.run(["/usr/bin/pbcopy"], input=txt.encode("utf-8"), timeout=3)
+                    elif sys_name == "Windows":
+                        subprocess.run(["clip"], input=txt.encode("utf-16le"), timeout=3)
+                except Exception:
+                    pass
+                self._send_json({"status": "ok"})
+                return
+
             if self.path == "/api/local/order-create":
                 res = _http_json_public(
                     initial_endpoint,
@@ -1190,6 +1225,13 @@ def launch_gui(initial_endpoint: str = DEFAULT_ENDPOINT) -> None:
     threading.Thread(target=srv.serve_forever, daemon=True).start()
 
     sys_name = platform.system()
+    if sys_name == "Darwin":
+        native_bin = _get_or_build_macos_native_webview_bin()
+        if native_bin is not None and native_bin.exists():
+            proc = subprocess.Popen([str(native_bin), url])
+            proc.wait()
+            return
+
     candidate_bins: list[Path] = []
     if sys_name == "Darwin":
         candidate_bins = [
@@ -1205,19 +1247,20 @@ def launch_gui(initial_endpoint: str = DEFAULT_ENDPOINT) -> None:
         ]
     app_bin = next((b for b in candidate_bins if b.exists()), None)
     if app_bin is not None:
-        profile_dir = CONFIG_DIR / "desktop_app_window_profile"
-        profile_dir.mkdir(parents=True, exist_ok=True)
         proc = subprocess.Popen(
             [
                 str(app_bin),
                 f"--app={url}",
-                f"--user-data-dir={profile_dir}",
                 "--window-size=1080,760",
                 "--no-first-run",
                 "--no-default-browser-check",
             ]
         )
-        proc.wait()
+        try:
+            while True:
+                time.sleep(3600)
+        except KeyboardInterrupt:
+            pass
     else:
         webbrowser.open(url)
         try:
@@ -1225,6 +1268,136 @@ def launch_gui(initial_endpoint: str = DEFAULT_ENDPOINT) -> None:
                 time.sleep(3600)
         except KeyboardInterrupt:
             pass
+
+
+MACOS_WKWEBVIEW_OBJC_SRC = r"""
+#import <Cocoa/Cocoa.h>
+#import <WebKit/WebKit.h>
+
+@interface AppDelegate : NSObject <NSApplicationDelegate, NSWindowDelegate>
+@property (strong) NSWindow *window;
+@property (strong) WKWebView *webView;
+@property (copy) NSString *targetURL;
+@end
+
+@implementation AppDelegate
+- (void)setupMainMenu {
+    NSMenu *menubar = [[NSMenu alloc] init];
+    NSMenuItem *appMenuItem = [[NSMenuItem alloc] init];
+    [menubar addItem:appMenuItem];
+    NSMenu *appMenu = [[NSMenu alloc] init];
+    [appMenu addItemWithTitle:@"退出 ClawProbe Desktop" action:@selector(terminate:) keyEquivalent:@"q"];
+    [appMenuItem setSubmenu:appMenu];
+
+    NSMenuItem *editMenuItem = [[NSMenuItem alloc] init];
+    [menubar addItem:editMenuItem];
+    NSMenu *editMenu = [[NSMenu alloc] initWithTitle:@"编辑"];
+    [editMenu addItemWithTitle:@"剪切" action:@selector(cut:) keyEquivalent:@"x"];
+    [editMenu addItemWithTitle:@"复制" action:@selector(copy:) keyEquivalent:@"c"];
+    [editMenu addItemWithTitle:@"粘贴" action:@selector(paste:) keyEquivalent:@"v"];
+    [editMenu addItemWithTitle:@"全选" action:@selector(selectAll:) keyEquivalent:@"a"];
+    [editMenuItem setSubmenu:editMenu];
+
+    [NSApp setMainMenu:menubar];
+}
+
+- (void)applicationDidFinishLaunching:(NSNotification *)notification {
+    [self setupMainMenu];
+    NSRect frame = NSMakeRect(0, 0, 1100, 760);
+    NSUInteger style = NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
+                       NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskResizable;
+    self.window = [[NSWindow alloc] initWithContentRect:frame
+                                              styleMask:style
+                                                backing:NSBackingStoreBuffered
+                                                  defer:NO];
+    [self.window setTitle:@"ClawProbe Desktop v1.1 — 移动应用 300 秒三阶段真机动态检测工作台"];
+    [self.window center];
+    [self.window setDelegate:self];
+    [self.window setBackgroundColor:[NSColor colorWithSRGBRed:0.043 green:0.067 blue:0.125 alpha:1.0]];
+
+    WKWebViewConfiguration *config = [[WKWebViewConfiguration alloc] init];
+    self.webView = [[WKWebView alloc] initWithFrame:[[self.window contentView] bounds] configuration:config];
+    [self.webView setAutoresizingMask:(NSViewWidthSizable | NSViewHeightSizable)];
+    [[self.window contentView] addSubview:self.webView];
+
+    NSURL *url = [NSURL URLWithString:self.targetURL];
+    NSURLRequest *req = [NSURLRequest requestWithURL:url];
+    [self.webView loadRequest:req];
+
+    [self.window makeKeyAndOrderFront:nil];
+    [NSApp activateIgnoringOtherApps:YES];
+}
+
+- (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication *)sender {
+    return YES;
+}
+@end
+
+int main(int argc, const char * argv[]) {
+    @autoreleasepool {
+        NSString *url = @"http://127.0.0.1:8080/";
+        if (argc > 1) {
+            url = [NSString stringWithUTF8String:argv[1]];
+        }
+        NSApplication *app = [NSApplication sharedApplication];
+        [app setActivationPolicy:NSApplicationActivationPolicyRegular];
+        AppDelegate *delegate = [[AppDelegate alloc] init];
+        delegate.targetURL = url;
+        [app setDelegate:delegate];
+        [app run];
+    }
+    return 0;
+}
+"""
+
+
+def _get_or_build_macos_native_webview_bin() -> Path | None:
+    """
+    Returns the native macOS Cocoa + WKWebView window executable (`ClawProbeNativeWindow`),
+    either pre-bundled inside `ClawProbe Desktop.app/Contents/MacOS/ClawProbeNativeWindow`
+    or compiled on-demand via `/usr/bin/clang -framework Cocoa -framework WebKit`.
+    """
+    bundled = THIS_DIR.parent / "MacOS" / "ClawProbeNativeWindow"
+    if bundled.exists() and os.access(bundled, os.X_OK):
+        return bundled
+    local_bundled = THIS_DIR / "ClawProbeNativeWindow"
+    if local_bundled.exists() and os.access(local_bundled, os.X_OK):
+        return local_bundled
+
+    cache_bin = CONFIG_DIR / "bin" / "ClawProbeNativeWindow"
+    if cache_bin.exists() and os.access(cache_bin, os.X_OK):
+        return cache_bin
+
+    clang_bin = Path("/usr/bin/clang")
+    if not clang_bin.exists():
+        return None
+    try:
+        cache_bin.parent.mkdir(parents=True, exist_ok=True)
+        src_file = cache_bin.parent / "ClawProbeNativeWindow.m"
+        src_file.write_text(MACOS_WKWEBVIEW_OBJC_SRC, encoding="utf-8")
+        res = subprocess.run(
+            [
+                str(clang_bin),
+                "-O2",
+                "-fobjc-arc",
+                "-framework",
+                "Cocoa",
+                "-framework",
+                "WebKit",
+                str(src_file),
+                "-o",
+                str(cache_bin),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+        if res.returncode == 0 and cache_bin.exists():
+            os.chmod(cache_bin, 0o755)
+            return cache_bin
+    except Exception:
+        pass
+    return None
 
 
 # ============================================================================
