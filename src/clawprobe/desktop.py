@@ -838,7 +838,7 @@ def _upload_quick_scan_multipart(endpoint: str, apk_path: Path) -> dict[str, Any
     apk_bytes = apk_path.read_bytes()
     head = (
         f"--{boundary}\r\n"
-        f'Content-Disposition: form-data; name="apk_file"; filename="{apk_path.name}"\r\n'
+        f'Content-Disposition: form-data; name="file"; filename="{apk_path.name}"\r\n'
         "Content-Type: application/vnd.android.package-archive\r\n\r\n"
     ).encode("utf-8")
     tail = f"\r\n--{boundary}--\r\n".encode("utf-8")
@@ -855,7 +855,7 @@ def _upload_quick_scan_multipart(endpoint: str, apk_path: Path) -> dict[str, Any
     )
     ctx = ssl.create_default_context()
     try:
-        with urllib.request.urlopen(req, timeout=120, context=ctx) as resp:
+        with urllib.request.urlopen(req, timeout=300, context=ctx) as resp:
             return json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
         try:
@@ -1108,7 +1108,10 @@ def launch_gui(initial_endpoint: str = DEFAULT_ENDPOINT) -> None:
                 return
 
             if self.path == "/api/local/run-inspect":
-                apk_p = Path(str(body.get("apk_path") or ""))
+                raw_apk_str = str(body.get("apk_path") or "").strip()
+                if " (" in raw_apk_str and raw_apk_str.endswith("MB)"):
+                    raw_apk_str = raw_apk_str.rsplit(" (", 1)[0].strip()
+                apk_p = Path(raw_apk_str)
                 mode = str(body.get("mode") or "FULL").upper()
                 logs: list[str] = []
                 if not apk_p.exists():
@@ -1120,7 +1123,17 @@ def launch_gui(initial_endpoint: str = DEFAULT_ENDPOINT) -> None:
                     if res.get("status") == "ok":
                         out_f = DEFAULT_REPORT_DIR / f"quick_scan_{apk_p.stem}_{int(time.time())}.json"
                         out_f.write_text(json.dumps(res, ensure_ascii=False, indent=2), encoding="utf-8")
-                        logs.append(f"✅ 30 秒抢跑快检完成！未同意前抢跑连接数：{res.get('pre_consent_connections_30s', 0)} 次")
+                        pre_cnt = res.get("pre_consent_flow_count", res.get("pre_consent_connections_30s", 0))
+                        logs.append(f"✅ {res.get('headline') or f'30 秒抢跑快检完成！未同意前抢跑连接数：{pre_cnt} 次'}")
+                        logs.append(
+                            f"📦 包名：{res.get('package_name', '-')} ｜ 版本：{res.get('version_name', '-')} "
+                            f"｜ 捕获总包数：{res.get('total_uid_packets', 0)} ｜ DNS 域名数：{res.get('unique_dns_domains', 0)}"
+                        )
+                        for fl in (res.get("masked_pre_consent_flows") or [])[:5]:
+                            logs.append(
+                                f"   • {fl.get('anchor_preview')} +{fl.get('offset_ms')}ms "
+                                f"{fl.get('protocol')} -> {fl.get('remote_ip_masked')}:{fl.get('remote_port')} ({fl.get('domain_sni_masked')})"
+                            )
                         logs.append(f"📄 快检摘要已保存至：{out_f}")
                         self._send_json({"status": "ok", "logs": logs, "result": res})
                     else:
