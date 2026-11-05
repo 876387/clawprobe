@@ -741,7 +741,7 @@ async function createDesktopOrder(channel) {
   document.getElementById("qrOrderTip").textContent =
     `请使用${chName}扫码并精确输入金额：¥${d.locked_amount_yuan}（含自动核销唯一分位尾差）`;
   document.getElementById("qrOrderImg").src =
-    (d.pay_channel === "WECHAT") ? "https://www.atooli.com/static/pay/wechat_qr.png" : "https://www.atooli.com/static/pay/alipay_qr.jpg";
+    `/api/local/qr-image?channel=${encodeURIComponent(d.pay_channel)}&t=${Date.now()}`;
   document.getElementById("qrPollStatus").textContent =
     `订单号 ${d.order_id} 已锁定 ¥${d.locked_amount_yuan}，等待一加 8T 真机到账通知自动核销...`;
 
@@ -947,6 +947,29 @@ def launch_gui(initial_endpoint: str = DEFAULT_ENDPOINT) -> None:
                     self._send_json({"status": "ok", "activated": True, "bundle": b})
                     return
                 self._send_json({"status": "ok", "activated": False, "order_status": res.get("order_status")})
+                return
+
+            if parsed.path == "/api/local/qr-image":
+                qs = urllib.parse.parse_qs(parsed.query)
+                ch = ((qs.get("channel") or ["WECHAT"])[0] or "WECHAT").upper()
+                rel_path = "/static/pay/wechat_qr.png" if ch == "WECHAT" else "/static/pay/alipay_qr.jpg"
+                ctype = "image/png" if ch == "WECHAT" else "image/jpeg"
+                try:
+                    ctx = ssl.create_default_context()
+                    req = urllib.request.Request(
+                        initial_endpoint.rstrip("/") + rel_path,
+                        headers={"User-Agent": "ClawProbe-Desktop/1.1"},
+                    )
+                    with urllib.request.urlopen(req, timeout=15, context=ctx) as resp:
+                        img_bytes = resp.read()
+                    self.send_response(200)
+                    self.send_header("Content-Type", ctype)
+                    self.send_header("Cache-Control", "no-store")
+                    self.send_header("Content-Length", str(len(img_bytes)))
+                    self.end_headers()
+                    self.wfile.write(img_bytes)
+                except Exception as exc:
+                    self._send_json({"status": "error", "message": str(exc)}, 502)
                 return
 
             self._send_json({"status": "error", "message": "Not found"}, 404)
