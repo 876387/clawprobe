@@ -221,7 +221,21 @@ def main() -> None:
     p_rec = sub.add_parser("reclaim", help="Immediately 3-pass overwrite & zero-shred server-side artifacts for a completed job")
     p_rec.add_argument("job_id", help="Job ID (cn_apk_*)")
 
+    p_desk = sub.add_parser(
+        "desktop",
+        help="Launch the Open-Source Cross-Platform (Windows/macOS) Desktop GUI Reference Workbench Demo",
+    )
+    p_desk.add_argument("--headless-self-test", action="store_true", help="Run system keychain & snippet generation self-test")
+
     args = parser.parse_args()
+
+    if args.cmd == "desktop":
+        from .desktop import launch_gui, main as desktop_main
+        if getattr(args, "headless_self_test", False):
+            sys.argv = ["clawprobe-desktop", "--headless-self-test", "--endpoint", args.endpoint or DEFAULT_PUBLIC_ENDPOINT]
+            sys.exit(desktop_main())
+        launch_gui(initial_endpoint=args.endpoint or DEFAULT_PUBLIC_ENDPOINT)
+        return
 
     if args.cmd == "auth" and args.auth_cmd == "login":
         saved = save_credentials(args.endpoint, args.api_key, args.secret, spki_pin=args.spki_pin)

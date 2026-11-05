@@ -1,0 +1,52 @@
+name: Build ClawProbe Desktop Windows x64 Standalone EXE (Unsigned)
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build-win64-desktop:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11 (x64)
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          architecture: "x64"
+
+      - name: Install clawprobe CLI & PyInstaller
+        run: |
+          python -m pip install --upgrade pip
+          pip install . pyinstaller
+
+      - name: Run Headless Self-Test on Windows
+        run: |
+          python desktop_client/clawprobe_desktop.py --headless-self-test
+
+      - name: Build ClawProbe-Desktop-Win64.exe
+        run: |
+          pyinstaller --noconfirm --onefile --windowed `
+            --name "ClawProbe-Desktop-Win64" `
+            --paths "src" `
+            --hidden-import "clawprobe.client" `
+            desktop_client/clawprobe_desktop.py
+
+      - name: Compute SHA-256 Checksum
+        shell: pwsh
+        run: |
+          $hash = (Get-FileHash -Algorithm SHA256 dist/ClawProbe-Desktop-Win64.exe).Hash.ToLower()
+          "$hash  ClawProbe-Desktop-Win64.exe" | Out-File -Encoding utf8 dist/ClawProbe-Desktop-Win64.exe.sha256
+          Get-Content dist/ClawProbe-Desktop-Win64.exe.sha256
+
+      - name: Upload Windows x64 Desktop Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ClawProbe-Desktop-Win64-Unsigned
+          path: |
+            dist/ClawProbe-Desktop-Win64.exe
+            dist/ClawProbe-Desktop-Win64.exe.sha256

@@ -87,6 +87,28 @@ clawprobe job <job_id> \
 clawprobe reclaim <job_id>
 ```
 
+### 4. 开源跨平台桌面工作台参考实现 (Windows & macOS Desktop GUI Demo)
+
+本仓库在 [`desktop_client/`](./desktop_client/) 目录下同步开源了基于 `ClawNexusClient` 构建的 **Windows 10/11 & macOS 12+ 跨平台桌面图形化参考实现 (`Apache-2.0`)**，供开发者直接免命令行使用或作为二次开发、内嵌企业合规工作台的参考样板：
+
+- **核心特性**：
+  - **0 第三方依赖**：纯 Python 标准库实现本地 `127.0.0.1` 回环工作台 + 原生独立窗口 (`Chrome` / `Edge` `--app=`)，彻底规避旧版 `Tcl/Tk` 渲染兼容问题；
+  - **系统安全钥匙串优先**：自动将 `sign_secret` 与订阅串存入 **macOS Keychain (`MACOS_KEYCHAIN`)** 或 **Windows 凭据管理器 (`WINDOWS_PASSWORD_VAULT`)**，并与 CLI 凭据 (`~/.clawnexus/credentials.json`) 自动同步；
+  - **全流程闭环**：支持原生文件选择、免费 30 秒抢跑快检、完整 300 秒三阶段真机检测、端内微信/支付宝扫码秒开与卡密 (`CP-...`) / 恢复码 (`RCV-...`) 激活。
+
+```bash
+# 方式 A：通过 CLI 子命令一键启动桌面图形化工作台 Demo
+clawprobe desktop
+
+# 方式 B：直接运行跨平台单文件源码脚本（支持 Windows / macOS 二次开发定制）
+python3 desktop_client/clawprobe_desktop.py
+
+# 方式 C：在 macOS 本地构建 .app 与 .dmg 磁盘镜像（Windows .exe 打包见 .github/workflows/build-desktop-win64.yml）
+python3 desktop_client/build_macos_dmg.py
+```
+
+详细架构与二次开发说明见：[`desktop_client/README.md`](./desktop_client/README.md)。
+
 ---
 
 ## 状态退出码说明 (Exit Codes)

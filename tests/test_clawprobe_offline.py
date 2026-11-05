@@ -77,6 +77,26 @@ class TestClawProbeOffline(unittest.TestCase):
         )
         self.assertIn("clawprobe 1.3.1", proc.stdout)
 
+    def test_desktop_demo_headless_self_test(self):
+        proc = subprocess.run(
+            [sys.executable, "-m", "clawprobe", "desktop", "--headless-self-test"],
+            cwd=str(SRC_DIR),
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        self.assertIn('"status": "ok"', proc.stdout)
+        self.assertIn('"keychain_roundtrip_verified": true', proc.stdout)
+
+        proc_script = subprocess.run(
+            [sys.executable, str(ROOT_DIR / "desktop_client" / "clawprobe_desktop.py"), "--headless-self-test"],
+            cwd=str(ROOT_DIR),
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        self.assertIn('"status": "ok"', proc_script.stdout)
+
     def test_zero_internal_ip_or_secret_leakage(self):
         forbidden_tokens = [
             "192.168.",
@@ -105,13 +125,19 @@ class TestClawProbeOffline(unittest.TestCase):
             "key_357a4b95c6c2",
             "key_c8168c27c517",
         ]
-        scan_targets = list(SRC_DIR.rglob("*.py")) + list((ROOT_DIR / "samples").rglob("*.json")) + [
-            ROOT_DIR / "README.md",
-            ROOT_DIR / "SECURITY.md",
-            ROOT_DIR / "CONTRIBUTING.md",
-            ROOT_DIR / "CHANGELOG.md",
-            ROOT_DIR / "pyproject.toml",
-        ]
+        scan_targets = (
+            list(SRC_DIR.rglob("*.py"))
+            + list((ROOT_DIR / "desktop_client").rglob("*.py"))
+            + list((ROOT_DIR / "desktop_client").rglob("*.md"))
+            + list((ROOT_DIR / "samples").rglob("*.json"))
+            + [
+                ROOT_DIR / "README.md",
+                ROOT_DIR / "SECURITY.md",
+                ROOT_DIR / "CONTRIBUTING.md",
+                ROOT_DIR / "CHANGELOG.md",
+                ROOT_DIR / "pyproject.toml",
+            ]
+        )
         for path in scan_targets:
             if not path.exists():
                 continue
