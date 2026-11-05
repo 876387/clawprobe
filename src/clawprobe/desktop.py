@@ -586,7 +586,7 @@ DESKTOP_HTML = """<!DOCTYPE html>
       <h3>💳 免注册微信 / 支付宝扫码秒开（一加 8T 专机自动核销）</h3>
       <div class="tier-grid" id="tierGrid">
         <div class="tier-item selected" data-tier="PAYG_1" onclick="selectTier(this)">
-          <div style="font-weight:700; color:#38bdf8;">单次应急解锁卡</div>
+          <div style="font-weight:700; color:#38bdf8;">单次按量检测卡</div>
           <div style="font-size:18px; font-weight:800; margin:2px 0;">¥19.90 <span style="font-size:11px; color:var(--muted); font-weight:400;">/ 1次 (365天)</span></div>
           <div style="font-size:11px; color:#fcd34d;">老带新加赠 +2 次</div>
         </div>
