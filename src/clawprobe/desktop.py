@@ -689,12 +689,35 @@ async function startInspection(mode) {
       body: JSON.stringify({apk_path: selectedApk, mode: mode})
     });
     const d = await r.json();
-    if (d.logs) d.logs.forEach(l => appendLog(l));
-    if (d.status !== "ok") {
-      appendLog(`❌ 检测未完成：${d.message || d.error_code}`);
-      if (d.need_subscribe) openPayModal();
+    if (d.status === "started" && d.task_id) {
+      let seenIdx = 0;
+      while (true) {
+        await new Promise(res => setTimeout(res, 1200));
+        const pr = await fetch(`/api/local/task-status?task_id=${encodeURIComponent(d.task_id)}`);
+        const pd = await pr.json();
+        const logs = pd.logs || [];
+        while (seenIdx < logs.length) {
+          appendLog(logs[seenIdx]);
+          seenIdx++;
+        }
+        if (pd.state === "done") {
+          await refreshState();
+          break;
+        }
+        if (pd.state === "error") {
+          appendLog(`❌ 检测未完成：${pd.message || "任务失败"}`);
+          if (pd.need_subscribe) openPayModal();
+          break;
+        }
+      }
     } else {
-      await refreshState();
+      if (d.logs) d.logs.forEach(l => appendLog(l));
+      if (d.status !== "ok") {
+        appendLog(`❌ 检测未完成：${d.message || d.error_code}`);
+        if (d.need_subscribe) openPayModal();
+      } else {
+        await refreshState();
+      }
     }
   } catch (e) {
     appendLog(`❌ 请求异常：${e}`);
@@ -855,7 +878,28 @@ def _http_json_public(endpoint: str, method: str, path: str, body: dict | None =
         return {"status": "error", "message": str(exc)}
 
 
-def _upload_quick_scan_multipart(endpoint: str, apk_path: Path) -> dict[str, Any]:
+def _resolve_fast_upload_target(endpoint: str) -> tuple[str, ssl.SSLContext]:
+    """
+    Discovers the high-bandwidth dedicated upload endpoint from `/api/v1/public/pricing`
+    so large APKs (up to 300 MB) stream over the 1000 Mbps fiber edge instead of the 3 Mbps web relay.
+    """
+    ctx = ssl.create_default_context()
+    try:
+        info = _http_json_public(endpoint, "GET", "/api/v1/public/pricing")
+        fast_ep = str(info.get("fast_upload_endpoint") or "").strip()
+        ca_pem = str(info.get("fast_upload_ca_pem") or "").strip()
+        if fast_ep and ca_pem:
+            fast_ctx = ssl.create_default_context()
+            fast_ctx.load_verify_locations(cadata=ca_pem)
+            return fast_ep, fast_ctx
+    except Exception:
+        pass
+    return endpoint, ctx
+
+
+def _upload_quick_scan_multipart(endpoint: str, apk_path: Path, log_fn: Any = None) -> dict[str, Any]:
+    import http.client
+
     boundary = f"----ClawProbeDesktopBoundary{uuid.uuid4().hex}"
     apk_bytes = apk_path.read_bytes()
     head = (
@@ -865,29 +909,54 @@ def _upload_quick_scan_multipart(endpoint: str, apk_path: Path) -> dict[str, Any
     ).encode("utf-8")
     tail = f"\r\n--{boundary}--\r\n".encode("utf-8")
     body = head + apk_bytes + tail
-    req = urllib.request.Request(
-        endpoint.rstrip("/") + "/api/v1/public/quick-scan",
-        data=body,
-        headers={
-            "Content-Type": f"multipart/form-data; boundary={boundary}",
-            "Content-Length": str(len(body)),
-            "User-Agent": "ClawProbe-Desktop/1.1",
-        },
-        method="POST",
-    )
-    ctx = ssl.create_default_context()
+    total_len = len(body)
+    mb_total = round(len(apk_bytes) / (1024 * 1024), 2)
+
+    target_ep, tls_ctx = _resolve_fast_upload_target(endpoint)
+    parsed = urllib.parse.urlparse(target_ep)
+    host = parsed.hostname or "www.atooli.com"
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+
+    if log_fn:
+        log_fn(f"📤 正在通过千兆专线高速上传 APK ({mb_total} MB)...")
+
     try:
-        with urllib.request.urlopen(req, timeout=300, context=ctx) as resp:
-            return json.loads(resp.read().decode("utf-8"))
-    except urllib.error.HTTPError as e:
+        conn = http.client.HTTPSConnection(host, port, timeout=360, context=tls_ctx)
+        conn.putrequest("POST", "/api/v1/public/quick-scan")
+        conn.putheader("Content-Type", f"multipart/form-data; boundary={boundary}")
+        conn.putheader("Content-Length", str(total_len))
+        conn.putheader("User-Agent", "ClawProbe-Desktop/1.1")
+        conn.endheaders()
+
+        chunk_size = 512 * 1024
+        sent = 0
+        next_pct = 25
+        for offset in range(0, total_len, chunk_size):
+            chunk = body[offset : offset + chunk_size]
+            conn.send(chunk)
+            sent += len(chunk)
+            pct = int(sent * 100 / total_len)
+            if log_fn and pct >= next_pct and next_pct < 100:
+                log_fn(f"   ↳ 上传进度：{round(sent / (1024 * 1024), 1)} MB / {mb_total} MB ({pct}%)")
+                next_pct += 25
+
+        if log_fn:
+            log_fn("🔬 APK 上传完成 (100%)，真机沙箱正在执行 30 秒冷启动未同意前抢跑抓包，请稍候...")
+
+        resp = conn.getresponse()
+        raw_resp = resp.read().decode("utf-8", errors="replace")
+        conn.close()
         try:
-            return json.loads(e.read().decode("utf-8"))
+            return json.loads(raw_resp)
         except Exception:
-            return {"status": "error", "message": f"HTTP {e.code}"}
+            return {"status": "error", "message": f"HTTP {resp.status}: {raw_resp[:160]}"}
+    except Exception as exc:
+        return {"status": "error", "message": str(exc)}
 
 
 def launch_gui(initial_endpoint: str = DEFAULT_ENDPOINT) -> None:
     DEFAULT_REPORT_DIR.mkdir(parents=True, exist_ok=True)
+    tasks_state: dict[str, dict[str, Any]] = {}
 
     class LocalWorkbenchHandler(http.server.BaseHTTPRequestHandler):
         def log_message(self, format: str, *args: Any) -> None:
@@ -911,6 +980,16 @@ def launch_gui(initial_endpoint: str = DEFAULT_ENDPOINT) -> None:
                 self.send_header("Content-Length", str(len(raw)))
                 self.end_headers()
                 self.wfile.write(raw)
+                return
+
+            if parsed.path == "/api/local/task-status":
+                qs = urllib.parse.parse_qs(parsed.query)
+                tid = (qs.get("task_id") or [""])[0]
+                st = tasks_state.get(tid)
+                if not st:
+                    self._send_json({"status": "error", "message": "任务不存在或已过期"}, 404)
+                    return
+                self._send_json(st)
                 return
 
             if parsed.path == "/api/local/status":
@@ -1148,73 +1227,106 @@ def launch_gui(initial_endpoint: str = DEFAULT_ENDPOINT) -> None:
                     raw_apk_str = raw_apk_str.rsplit(" (", 1)[0].strip()
                 apk_p = Path(raw_apk_str)
                 mode = str(body.get("mode") or "FULL").upper()
-                logs: list[str] = []
                 if not apk_p.exists():
                     self._send_json({"status": "error", "message": f"APK 文件不存在：{apk_p}"})
                     return
 
-                if mode == "QUICK":
-                    res = _upload_quick_scan_multipart(initial_endpoint, apk_p)
-                    if res.get("status") == "ok":
-                        out_f = DEFAULT_REPORT_DIR / f"quick_scan_{apk_p.stem}_{int(time.time())}.json"
-                        out_f.write_text(json.dumps(res, ensure_ascii=False, indent=2), encoding="utf-8")
-                        pre_cnt = res.get("pre_consent_flow_count", res.get("pre_consent_connections_30s", 0))
-                        logs.append(f"✅ {res.get('headline') or f'30 秒抢跑快检完成！未同意前抢跑连接数：{pre_cnt} 次'}")
-                        logs.append(
-                            f"📦 包名：{res.get('package_name', '-')} ｜ 版本：{res.get('version_name', '-')} "
-                            f"｜ 捕获总包数：{res.get('total_uid_packets', 0)} ｜ DNS 域名数：{res.get('unique_dns_domains', 0)}"
-                        )
-                        for fl in (res.get("masked_pre_consent_flows") or [])[:5]:
-                            logs.append(
-                                f"   • {fl.get('anchor_preview')} +{fl.get('offset_ms')}ms "
-                                f"{fl.get('protocol')} -> {fl.get('remote_ip_masked')}:{fl.get('remote_port')} ({fl.get('domain_sni_masked')})"
-                            )
-                        logs.append(f"📄 快检摘要已保存至：{out_f}")
-                        self._send_json({"status": "ok", "logs": logs, "result": res})
-                    else:
-                        self._send_json({"status": "error", "logs": logs, "message": res.get("message") or "快检失败"})
-                    return
-
-                creds = load_desktop_credentials()
-                if not creds:
-                    self._send_json({
-                        "status": "error",
-                        "need_subscribe": True,
-                        "message": "完整 300 秒三阶段真机检测需先扫码开通或兑换卡密（或点击右侧「⚡ 免费 30 秒未同意前抢跑快检」体验）",
-                    })
-                    return
-
-                try:
-                    cli = ClawNexusClient(
-                        endpoint=creds["endpoint"],
-                        api_key=creds["api_key"],
-                        sign_secret=creds["sign_secret"],
-                    )
-                    raw_apk = apk_p.read_bytes()
-                    apk_sha = hashlib.sha256(raw_apk).hexdigest()
-                    logs.append(f"正在通过 TLS 1.3 + HMAC-SHA256 签名上传 APK (SHA256={apk_sha[:16]}...)...")
-                    code, sub_res = cli.upload_multipart(
-                        "/api/v1/inspect/submit",
-                        file_path=apk_p,
-                        fields={
-                            "mode": "privacy",
-                            "confidential": "false",
-                            "ttl_hours": "72",
-                            "authorization_attested": "true",
-                            "wait": "false",
-                        },
-                    )
-                    if code not in (200, 202) or not isinstance(sub_res, dict) or not sub_res.get("job_id"):
-                        self._send_json({"status": "error", "logs": logs, "message": f"提交失败 ({code}): {sub_res}"})
+                if mode == "FULL":
+                    creds = load_desktop_credentials()
+                    if not creds:
+                        self._send_json({
+                            "status": "error",
+                            "need_subscribe": True,
+                            "message": "完整 300 秒三阶段真机检测需先扫码开通或兑换卡密（或点击右侧「⚡ 免费 30 秒未同意前抢跑快检」体验）",
+                        })
                         return
-                    job_id = sub_res["job_id"]
-                    logs.append(f"✅ 任务已创建：{job_id}，已分配真机沙箱执行 300 秒三阶段动态检测...")
-                    out_dir = DEFAULT_REPORT_DIR / job_id
-                    out_dir.mkdir(parents=True, exist_ok=True)
-                    (out_dir / "job_submitted.json").write_text(json.dumps(sub_res, ensure_ascii=False, indent=2), encoding="utf-8")
-                    self._send_json({"status": "ok", "logs": logs, "job_id": job_id})
-                except Exception as exc:
-                    self._send_json({"status": "error", "logs": logs, "message": str(exc)})
+
+                task_id = f"task_{int(time.time() * 1000)}_{uuid.uuid4().hex[:6]}"
+                task_obj: dict[str, Any] = {"status": "running", "logs": []}
+                tasks_state[task_id] = task_obj
+
+                def _append_log(msg: str) -> None:
+                    task_obj["logs"].append(msg)
+
+                def _bg_worker() -> None:
+                    try:
+                        if mode == "QUICK":
+                            res = _upload_quick_scan_multipart(initial_endpoint, apk_p, log_fn=_append_log)
+                            if res.get("status") == "ok":
+                                out_f = DEFAULT_REPORT_DIR / f"quick_scan_{apk_p.stem}_{int(time.time())}.json"
+                                out_f.write_text(json.dumps(res, ensure_ascii=False, indent=2), encoding="utf-8")
+                                pre_cnt = res.get("pre_consent_flow_count", res.get("pre_consent_connections_30s", 0))
+                                _append_log(f"✅ {res.get('headline') or f'30 秒抢跑快检完成！未同意前抢跑连接数：{pre_cnt} 次'}")
+                                _append_log(
+                                    f"📦 包名：{res.get('package_name', '-')} ｜ 版本：{res.get('version_name', '-')} "
+                                    f"｜ 捕获总包数：{res.get('total_uid_packets', 0)} ｜ DNS 域名数：{res.get('unique_dns_domains', 0)}"
+                                )
+                                for fl in (res.get("masked_pre_consent_flows") or [])[:5]:
+                                    _append_log(
+                                        f"   • {fl.get('anchor_preview')} +{fl.get('offset_ms')}ms "
+                                        f"{fl.get('protocol')} -> {fl.get('remote_ip_masked')}:{fl.get('remote_port')} ({fl.get('domain_sni_masked')})"
+                                    )
+                                _append_log(f"📄 快检摘要已保存至：{out_f}")
+                                task_obj["result"] = res
+                                task_obj["status"] = "ok"
+                            else:
+                                task_obj["message"] = res.get("message") or "快检失败"
+                                task_obj["status"] = "error"
+                            return
+
+                        creds_local = load_desktop_credentials()
+                        if not creds_local:
+                            task_obj["need_subscribe"] = True
+                            task_obj["message"] = "未检测到有效订阅凭证"
+                            task_obj["status"] = "error"
+                            return
+
+                        target_ep, ca_pem = _resolve_fast_upload_target(creds_local["endpoint"])
+                        ca_file_path: str | None = None
+                        if ca_pem:
+                            CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+                            ca_p = CONFIG_DIR / "fast_edge_ca.pem"
+                            ca_p.write_text(ca_pem, encoding="utf-8")
+                            ca_file_path = str(ca_p)
+
+                        cli = ClawNexusClient(
+                            endpoint=target_ep,
+                            api_key=creds_local["api_key"],
+                            sign_secret=creds_local["sign_secret"],
+                            ca_cert=ca_file_path,
+                            timeout=600.0,
+                        )
+                        raw_apk = apk_p.read_bytes()
+                        apk_sha = hashlib.sha256(raw_apk).hexdigest()
+                        _append_log(f"正在通过 TLS 1.3 + HMAC-SHA256 签名高速上传 APK (SHA256={apk_sha[:16]}...)...")
+                        code, sub_res = cli.upload_multipart(
+                            "/api/v1/inspect/submit",
+                            file_path=apk_p,
+                            fields={
+                                "mode": "privacy",
+                                "confidential": "false",
+                                "ttl_hours": "72",
+                                "authorization_attested": "true",
+                                "wait": "false",
+                            },
+                        )
+                        if code not in (200, 202) or not isinstance(sub_res, dict) or not sub_res.get("job_id"):
+                            task_obj["message"] = f"提交失败 ({code}): {sub_res}"
+                            task_obj["status"] = "error"
+                            return
+                        job_id = sub_res["job_id"]
+                        _append_log(f"✅ 任务已创建：{job_id}，已分配真机沙箱执行 300 秒三阶段动态检测...")
+                        out_dir = DEFAULT_REPORT_DIR / job_id
+                        out_dir.mkdir(parents=True, exist_ok=True)
+                        (out_dir / "job_submitted.json").write_text(json.dumps(sub_res, ensure_ascii=False, indent=2), encoding="utf-8")
+                        task_obj["job_id"] = job_id
+                        task_obj["status"] = "ok"
+                    except Exception as exc:
+                        task_obj["message"] = str(exc)
+                        task_obj["status"] = "error"
+
+                threading.Thread(target=_bg_worker, daemon=True).start()
+                self._send_json({"status": "started", "task_id": task_id})
                 return
 
             self._send_json({"status": "error", "message": "Unknown endpoint"}, 404)
