@@ -700,11 +700,11 @@ async function startInspection(mode) {
           appendLog(logs[seenIdx]);
           seenIdx++;
         }
-        if (pd.state === "done") {
+        if (pd.state === "done" || pd.status === "ok" || pd.status === "done") {
           await refreshState();
           break;
         }
-        if (pd.state === "error") {
+        if (pd.state === "error" || pd.status === "error") {
           appendLog(`❌ 检测未完成：${pd.message || "任务失败"}`);
           if (pd.need_subscribe) openPayModal();
           break;
@@ -878,7 +878,7 @@ def _http_json_public(endpoint: str, method: str, path: str, body: dict | None =
         return {"status": "error", "message": str(exc)}
 
 
-def _resolve_fast_upload_target(endpoint: str) -> tuple[str, ssl.SSLContext]:
+def _resolve_fast_upload_target(endpoint: str) -> tuple[str, ssl.SSLContext, str]:
     """
     Discovers the high-bandwidth dedicated upload endpoint from `/api/v1/public/pricing`
     so large APKs (up to 300 MB) stream over the 1000 Mbps fiber edge instead of the 3 Mbps web relay.
@@ -891,10 +891,10 @@ def _resolve_fast_upload_target(endpoint: str) -> tuple[str, ssl.SSLContext]:
         if fast_ep and ca_pem:
             fast_ctx = ssl.create_default_context()
             fast_ctx.load_verify_locations(cadata=ca_pem)
-            return fast_ep, fast_ctx
+            return fast_ep, fast_ctx, ca_pem
     except Exception:
         pass
-    return endpoint, ctx
+    return endpoint, ctx, ""
 
 
 def _upload_quick_scan_multipart(endpoint: str, apk_path: Path, log_fn: Any = None) -> dict[str, Any]:
@@ -912,7 +912,7 @@ def _upload_quick_scan_multipart(endpoint: str, apk_path: Path, log_fn: Any = No
     total_len = len(body)
     mb_total = round(len(apk_bytes) / (1024 * 1024), 2)
 
-    target_ep, tls_ctx = _resolve_fast_upload_target(endpoint)
+    target_ep, tls_ctx, _ = _resolve_fast_upload_target(endpoint)
     parsed = urllib.parse.urlparse(target_ep)
     host = parsed.hostname or "www.atooli.com"
     port = parsed.port or (443 if parsed.scheme == "https" else 80)
@@ -943,8 +943,31 @@ def _upload_quick_scan_multipart(endpoint: str, apk_path: Path, log_fn: Any = No
         if log_fn:
             log_fn("🔬 APK 上传完成 (100%)，真机沙箱正在执行 30 秒冷启动未同意前抢跑抓包，请稍候...")
 
-        resp = conn.getresponse()
-        raw_resp = resp.read().decode("utf-8", errors="replace")
+        wait_done = threading.Event()
+
+        def _sandbox_progress_ticker() -> None:
+            stages = [
+                (8, "   ↳ [沙箱阶段 1/4] 正在将 APK 推送至隔离容器沙箱并执行安装..."),
+                (18, "   ↳ [沙箱阶段 2/4] 应用已冷启动（未点同意隐私弹窗），正在执行 30 秒底层抓包 (tcpdump)..."),
+                (33, "   ↳ [沙箱阶段 3/4] 30 秒抓包观察窗推进中，正在实时捕获 DNS / TLS SNI 与远端五元组..."),
+                (48, "   ↳ [沙箱阶段 4/4] 正在回传 PCAP 抓包文件并生成抢跑连接审计摘要..."),
+            ]
+            t_start = time.time()
+            idx = 0
+            while not wait_done.wait(1.0):
+                elapsed = time.time() - t_start
+                if idx < len(stages) and elapsed >= stages[idx][0]:
+                    if log_fn:
+                        log_fn(stages[idx][1])
+                    idx += 1
+
+        if log_fn:
+            threading.Thread(target=_sandbox_progress_ticker, daemon=True).start()
+        try:
+            resp = conn.getresponse()
+            raw_resp = resp.read().decode("utf-8", errors="replace")
+        finally:
+            wait_done.set()
         conn.close()
         try:
             return json.loads(raw_resp)
@@ -1242,7 +1265,7 @@ def launch_gui(initial_endpoint: str = DEFAULT_ENDPOINT) -> None:
                         return
 
                 task_id = f"task_{int(time.time() * 1000)}_{uuid.uuid4().hex[:6]}"
-                task_obj: dict[str, Any] = {"status": "running", "logs": []}
+                task_obj: dict[str, Any] = {"status": "running", "state": "running", "logs": []}
                 tasks_state[task_id] = task_obj
 
                 def _append_log(msg: str) -> None:
@@ -1269,9 +1292,11 @@ def launch_gui(initial_endpoint: str = DEFAULT_ENDPOINT) -> None:
                                 _append_log(f"📄 快检摘要已保存至：{out_f}")
                                 task_obj["result"] = res
                                 task_obj["status"] = "ok"
+                                task_obj["state"] = "done"
                             else:
                                 task_obj["message"] = res.get("message") or "快检失败"
                                 task_obj["status"] = "error"
+                                task_obj["state"] = "error"
                             return
 
                         creds_local = load_desktop_credentials()
@@ -1279,9 +1304,10 @@ def launch_gui(initial_endpoint: str = DEFAULT_ENDPOINT) -> None:
                             task_obj["need_subscribe"] = True
                             task_obj["message"] = "未检测到有效订阅凭证"
                             task_obj["status"] = "error"
+                            task_obj["state"] = "error"
                             return
 
-                        target_ep, ca_pem = _resolve_fast_upload_target(creds_local["endpoint"])
+                        target_ep, _tls_ctx, ca_pem = _resolve_fast_upload_target(creds_local["endpoint"])
                         ca_file_path: str | None = None
                         if ca_pem:
                             CONFIG_DIR.mkdir(parents=True, exist_ok=True)
@@ -1313,6 +1339,7 @@ def launch_gui(initial_endpoint: str = DEFAULT_ENDPOINT) -> None:
                         if code not in (200, 202) or not isinstance(sub_res, dict) or not sub_res.get("job_id"):
                             task_obj["message"] = f"提交失败 ({code}): {sub_res}"
                             task_obj["status"] = "error"
+                            task_obj["state"] = "error"
                             return
                         job_id = sub_res["job_id"]
                         _append_log(f"✅ 任务已创建：{job_id}，已分配真机沙箱执行 300 秒三阶段动态检测...")
@@ -1321,9 +1348,11 @@ def launch_gui(initial_endpoint: str = DEFAULT_ENDPOINT) -> None:
                         (out_dir / "job_submitted.json").write_text(json.dumps(sub_res, ensure_ascii=False, indent=2), encoding="utf-8")
                         task_obj["job_id"] = job_id
                         task_obj["status"] = "ok"
+                        task_obj["state"] = "done"
                     except Exception as exc:
                         task_obj["message"] = str(exc)
                         task_obj["status"] = "error"
+                        task_obj["state"] = "error"
 
                 threading.Thread(target=_bg_worker, daemon=True).start()
                 self._send_json({"status": "started", "task_id": task_id})
