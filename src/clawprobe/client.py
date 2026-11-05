@@ -391,7 +391,12 @@ class ClawNexusClient:
                 ).encode("latin-1")
                 sock.sendall(req_head)
                 if body:
-                    sock.sendall(body)
+                    try:
+                        chunk_sz = 524288
+                        for off in range(0, len(body), chunk_sz):
+                            sock.sendall(body[off : off + chunk_sz])
+                    except (BrokenPipeError, ConnectionResetError):
+                        pass
                 resp = http.client.HTTPResponse(sock)
                 resp.begin()
                 resp_bytes = resp.read()
@@ -440,22 +445,56 @@ class ClawNexusClient:
     def upload_multipart(
         self,
         path_with_query: str,
-        file_path: Path,
+        file_path: Path | None,
         fields: dict[str, str],
+        log_fn: Any = None,
     ) -> tuple[int, dict[str, Any]]:
-        file_bytes = file_path.read_bytes()
+        effective_fields = dict(fields)
+        file_bytes = b""
+        use_instant_dedup = False
+
+        if file_path is not None:
+            file_bytes = file_path.read_bytes()
+            apk_sha = hashlib.sha256(file_bytes).hexdigest()
+            is_conf = str(effective_fields.get("confidential") or "false").strip().lower() in ("true", "1", "yes")
+            if not is_conf and path_with_query == "/api/v1/inspect/submit":
+                try:
+                    p_st, p_res = self.request_json(
+                        "POST",
+                        "/api/v1/public/quick-scan",
+                        payload={
+                            "apk_sha256": apk_sha,
+                            "apk_size": len(file_bytes),
+                            "filename": file_path.name,
+                            "probe_only": True,
+                        },
+                        require_auth=False,
+                    )
+                    if p_st == 200 and isinstance(p_res, dict) and p_res.get("cas_exists"):
+                        use_instant_dedup = True
+                        effective_fields["apk_sha256"] = apk_sha
+                        effective_fields["filename"] = file_path.name
+                        if log_fn:
+                            mb_saved = round(len(file_bytes) / (1024 * 1024), 2)
+                            log_fn(f"⚡ 命中服务端 SHA-256 极速秒传！已免除 {mb_saved} MB 重复上传，0 字节秒级直达沙箱...")
+                except Exception:
+                    pass
+
         boundary = f"----ClawNexusCLIBoundary{secrets.token_hex(12)}"
         parts: list[bytes] = []
-        for k, v in fields.items():
+        for k, v in effective_fields.items():
             parts.append(f"--{boundary}\r\n".encode("utf-8"))
             parts.append(f'Content-Disposition: form-data; name="{k}"\r\n\r\n{v}\r\n'.encode("utf-8"))
-        parts.append(f"--{boundary}\r\n".encode("utf-8"))
-        parts.append(
-            f'Content-Disposition: form-data; name="file"; filename="{file_path.name}"\r\n'
-            f"Content-Type: application/octet-stream\r\n\r\n".encode("utf-8")
-        )
-        parts.append(file_bytes)
-        parts.append(f"\r\n--{boundary}--\r\n".encode("utf-8"))
+        if file_path is not None and not use_instant_dedup:
+            parts.append(f"--{boundary}\r\n".encode("utf-8"))
+            parts.append(
+                f'Content-Disposition: form-data; name="file"; filename="{file_path.name}"\r\n'
+                f"Content-Type: application/octet-stream\r\n\r\n".encode("utf-8")
+            )
+            parts.append(file_bytes)
+            parts.append(f"\r\n--{boundary}--\r\n".encode("utf-8"))
+        else:
+            parts.append(f"--{boundary}--\r\n".encode("utf-8"))
         multipart_body = b"".join(parts)
 
         st, _, raw = self.request_raw(

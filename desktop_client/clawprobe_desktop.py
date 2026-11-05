@@ -900,16 +900,8 @@ def _resolve_fast_upload_target(endpoint: str) -> tuple[str, ssl.SSLContext, str
 def _upload_quick_scan_multipart(endpoint: str, apk_path: Path, log_fn: Any = None) -> dict[str, Any]:
     import http.client
 
-    boundary = f"----ClawProbeDesktopBoundary{uuid.uuid4().hex}"
     apk_bytes = apk_path.read_bytes()
-    head = (
-        f"--{boundary}\r\n"
-        f'Content-Disposition: form-data; name="file"; filename="{apk_path.name}"\r\n'
-        "Content-Type: application/vnd.android.package-archive\r\n\r\n"
-    ).encode("utf-8")
-    tail = f"\r\n--{boundary}--\r\n".encode("utf-8")
-    body = head + apk_bytes + tail
-    total_len = len(body)
+    apk_sha = hashlib.sha256(apk_bytes).hexdigest()
     mb_total = round(len(apk_bytes) / (1024 * 1024), 2)
 
     target_ep, tls_ctx, _ = _resolve_fast_upload_target(endpoint)
@@ -918,7 +910,71 @@ def _upload_quick_scan_multipart(endpoint: str, apk_path: Path, log_fn: Any = No
     port = parsed.port or (443 if parsed.scheme == "https" else 80)
 
     if log_fn:
-        log_fn(f"📤 正在通过千兆专线高速上传 APK ({mb_total} MB)...")
+        log_fn(f"🔍 正在校验本地 APK SHA-256 指纹 ({apk_sha[:16]}...) 与服务端秒传缓存...")
+
+    try:
+        probe_body = json.dumps(
+            {
+                "apk_sha256": apk_sha,
+                "apk_size": len(apk_bytes),
+                "filename": apk_path.name,
+                "probe_only": True,
+            }
+        ).encode("utf-8")
+        p_conn = http.client.HTTPSConnection(host, port, timeout=15, context=tls_ctx)
+        p_conn.request(
+            "POST",
+            "/api/v1/public/quick-scan",
+            body=probe_body,
+            headers={"Content-Type": "application/json", "User-Agent": "ClawProbe-Desktop/1.1"},
+        )
+        p_resp = p_conn.getresponse()
+        p_raw = p_resp.read().decode("utf-8", errors="replace")
+        p_conn.close()
+        if p_resp.status == 200:
+            p_obj = json.loads(p_raw)
+            if p_obj.get("cached_quick_scan") and isinstance(p_obj.get("quick_scan_result"), dict):
+                if log_fn:
+                    log_fn(f"⚡ 命中 SHA-256 极速秒传与 24h 快检结果缓存！已为您节省 {mb_total} MB 上传流量 (0 字节免传)！")
+                return p_obj["quick_scan_result"]
+            if p_obj.get("cas_exists"):
+                if log_fn:
+                    log_fn(f"⚡ 命中 SHA-256 极速秒传！服务端已存在相同指纹文件，免上传 {mb_total} MB，直接启动 30 秒真机抓包...")
+                exec_body = json.dumps(
+                    {
+                        "apk_sha256": apk_sha,
+                        "apk_size": len(apk_bytes),
+                        "filename": apk_path.name,
+                        "probe_only": False,
+                    }
+                ).encode("utf-8")
+                e_conn = http.client.HTTPSConnection(host, port, timeout=360, context=tls_ctx)
+                e_conn.request(
+                    "POST",
+                    "/api/v1/public/quick-scan",
+                    body=exec_body,
+                    headers={"Content-Type": "application/json", "User-Agent": "ClawProbe-Desktop/1.1"},
+                )
+                e_resp = e_conn.getresponse()
+                e_raw = e_resp.read().decode("utf-8", errors="replace")
+                e_conn.close()
+                if e_resp.status == 200:
+                    return json.loads(e_raw)
+    except Exception:
+        pass
+
+    boundary = f"----ClawProbeDesktopBoundary{uuid.uuid4().hex}"
+    head = (
+        f"--{boundary}\r\n"
+        f'Content-Disposition: form-data; name="file"; filename="{apk_path.name}"\r\n'
+        "Content-Type: application/vnd.android.package-archive\r\n\r\n"
+    ).encode("utf-8")
+    tail = f"\r\n--{boundary}--\r\n".encode("utf-8")
+    body = head + apk_bytes + tail
+    total_len = len(body)
+
+    if log_fn:
+        log_fn(f"📤 服务端首次接收该包，正在通过千兆专线高速上传 APK ({mb_total} MB)...")
 
     try:
         conn = http.client.HTTPSConnection(host, port, timeout=360, context=tls_ctx)
@@ -1033,9 +1089,10 @@ def launch_gui(initial_endpoint: str = DEFAULT_ENDPOINT) -> None:
                         api_key=creds["api_key"],
                         sign_secret=creds["sign_secret"],
                     )
-                    code, summary = cli.request_json("GET", "/api/v1/usage/summary")
-                    if code == 200 and isinstance(summary, dict):
-                        rem_credits = summary.get("remaining_inspect_credits")
+                    code, verify_res = cli.request_json("GET", "/api/v1/auth/verify")
+                    if code == 200 and isinstance(verify_res, dict):
+                        ac = verify_res.get("auth_context") or {}
+                        rem_credits = ac.get("total_inspect_credits_remaining")
                 except Exception:
                     pass
                 self._send_json({
@@ -1324,7 +1381,7 @@ def launch_gui(initial_endpoint: str = DEFAULT_ENDPOINT) -> None:
                         )
                         raw_apk = apk_p.read_bytes()
                         apk_sha = hashlib.sha256(raw_apk).hexdigest()
-                        _append_log(f"正在通过 TLS 1.3 + HMAC-SHA256 签名高速上传 APK (SHA256={apk_sha[:16]}...)...")
+                        _append_log(f"🔍 正在校验 APK 指纹 (SHA256={apk_sha[:16]}...) 并通过 TLS 1.3 + HMAC-SHA256 签名提交任务...")
                         code, sub_res = cli.upload_multipart(
                             "/api/v1/inspect/submit",
                             file_path=apk_p,
@@ -1335,17 +1392,65 @@ def launch_gui(initial_endpoint: str = DEFAULT_ENDPOINT) -> None:
                                 "authorization_attested": "true",
                                 "wait": "false",
                             },
+                            log_fn=_append_log,
                         )
                         if code not in (200, 202) or not isinstance(sub_res, dict) or not sub_res.get("job_id"):
-                            task_obj["message"] = f"提交失败 ({code}): {sub_res}"
+                            err_msg = sub_res.get("message") if isinstance(sub_res, dict) else str(sub_res)
+                            task_obj["message"] = f"提交失败 ({code}): {err_msg}"
                             task_obj["status"] = "error"
                             task_obj["state"] = "error"
                             return
                         job_id = sub_res["job_id"]
-                        _append_log(f"✅ 任务已创建：{job_id}，已分配真机沙箱执行 300 秒三阶段动态检测...")
+                        dedup_note = "（⚡ 已触发 SHA-256 极速秒传）" if sub_res.get("instant_dedup") else ""
+                        _append_log(f"✅ 任务已创建：{job_id} {dedup_note}，已分配真机沙箱执行 300 秒三阶段动态检测...")
                         out_dir = DEFAULT_REPORT_DIR / job_id
                         out_dir.mkdir(parents=True, exist_ok=True)
                         (out_dir / "job_submitted.json").write_text(json.dumps(sub_res, ensure_ascii=False, indent=2), encoding="utf-8")
+
+                        t_poll_start = time.time()
+                        last_stage_logged = 0
+                        while True:
+                            time.sleep(8.0)
+                            elapsed = int(time.time() - t_poll_start)
+                            if elapsed >= 15 and last_stage_logged < 1:
+                                _append_log(f"   ↳ [300s 阶段 1/3 · 已运行 {elapsed}s] 冷启动静默观察窗（60s，未点同意隐私弹窗前抢跑监测）...")
+                                last_stage_logged = 1
+                            elif elapsed >= 75 and last_stage_logged < 2:
+                                _append_log(f"   ↳ [300s 阶段 2/3 · 已运行 {elapsed}s] 已点击同意隐私弹窗，正在执行 UI 深度遍历与加密流量捕获（120s）...")
+                                last_stage_logged = 2
+                            elif elapsed >= 195 and last_stage_logged < 3:
+                                _append_log(f"   ↳ [300s 阶段 3/3 · 已运行 {elapsed}s] 应用退至后台，正在捕获后台静默驻留与心跳唤醒流量（120s）...")
+                                last_stage_logged = 3
+                            elif elapsed >= 310 and last_stage_logged < 4:
+                                _append_log(f"   ↳ [报告合成 · 已运行 {elapsed}s] 300 秒三阶段抓包完毕，正在生成无水印 PDF 报告与 PCAP 证据包...")
+                                last_stage_logged = 4
+
+                            st_code, j_info = cli.request_json("GET", f"/api/v1/inspect/jobs/{job_id}")
+                            if st_code == 200 and isinstance(j_info, dict):
+                                j_status = str(j_info.get("job_status") or j_info.get("status") or "").upper()
+                                if j_status == "SUCCEEDED":
+                                    _append_log("📥 检测已完成，正在自动下载无水印 PDF 报告、结构化 JSON 与 PCAP 证据包...")
+                                    for fname, ep_suffix in [
+                                        ("report.pdf", f"/api/v1/inspect/jobs/{job_id}/report.pdf"),
+                                        ("report.json", f"/api/v1/inspect/jobs/{job_id}/report.json"),
+                                        ("bundle.zip", f"/api/v1/inspect/jobs/{job_id}/bundle.zip"),
+                                    ]:
+                                        d_code, _, d_bytes = cli.request_raw("GET", ep_suffix, require_auth=True)
+                                        if d_code == 200 and d_bytes:
+                                            (out_dir / fname).write_bytes(d_bytes)
+                                    _append_log(f"🎉 300 秒三阶段真机检测全部完成！报告目录：{out_dir}")
+                                    _append_log(f"   • 无水印 PDF 报告：{out_dir / 'report.pdf'}")
+                                    _append_log(f"   • PCAP 抓包证据包：{out_dir / 'bundle.zip'}")
+                                    break
+                                if j_status == "FAILED":
+                                    task_obj["message"] = f"沙箱任务执行失败：{j_info.get('error_msg') or '未知错误'}"
+                                    task_obj["status"] = "error"
+                                    task_obj["state"] = "error"
+                                    return
+                            if elapsed > 540:
+                                _append_log(f"⚠️ 轮询等待超时，您可稍后通过任务编号 {job_id} 拉取报告。")
+                                break
+
                         task_obj["job_id"] = job_id
                         task_obj["status"] = "ok"
                         task_obj["state"] = "done"
