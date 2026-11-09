@@ -335,7 +335,7 @@ DESKTOP_HTML = """<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8"/>
-<title>JanusFlow Desktop v1.2 (雅努斯流 · janusflow.cn / JanusFlow.net) — 移动应用 300 秒三阶段真机动态检测工作台</title>
+<title>JanusFlow Desktop v1.2 (雅努斯流 · janusflow.cn / JanusFlow.net / atooli.com) — 移动应用 300 秒三阶段真机动态检测工作台</title>
 <style>
   :root {
     --bg: #0b1120;
@@ -522,7 +522,7 @@ DESKTOP_HTML = """<!DOCTYPE html>
 </head>
 <body>
   <div class="topbar">
-    <h1>🏛️ JanusFlow Desktop v1.2 · 雅努斯流 — 开源 CLI 图形化参考工作台 (janusflow.cn / JanusFlow.net · 原 ClawProbe)</h1>
+    <h1>🏛️ JanusFlow Desktop v1.2 · 雅努斯流 — 开源 CLI 图形化参考工作台 (janusflow.cn · JanusFlow.net · atooli.com)</h1>
     <div id="authBadge" class="badge-status">正在读取系统安全钥匙串...</div>
   </div>
   <div class="banner">

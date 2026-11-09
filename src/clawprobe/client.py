@@ -221,12 +221,15 @@ def load_credentials(
         except Exception:
             stored = {}
     stored_ep = str(stored.get("endpoint") or "").rstrip("/")
+    is_official_ep = any(
+        d in stored_ep.lower() for d in ("atooli.com", "janusflow.cn", "janusflow.net")
+    )
     ep = (
         endpoint
         or os.environ.get("JANUSFLOW_ENDPOINT")
         or os.environ.get("CLAW_ENDPOINT")
         or os.environ.get("CLAWNEXUS_ENDPOINT")
-        or (stored_ep if stored_ep.startswith("https://www.atooli.com") else "")
+        or (stored_ep if is_official_ep else "")
         or DEFAULT_PUBLIC_ENDPOINT
     ).rstrip("/")
     ak = (

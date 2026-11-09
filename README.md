@@ -1,10 +1,10 @@
-# JanusFlow · 雅努斯流 (`janusflow.cn` / `JanusFlow.net` · ClawProbe CLI & Desktop GUI `clawprobe`)
+# JanusFlow · 雅努斯流 (`janusflow.cn` · `JanusFlow.net` · `atooli.com` · ClawProbe CLI & Desktop GUI)
 
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![Zero Dependencies](https://img.shields.io/badge/dependencies-0%20(stdlib%20only)-brightgreen.svg)](https://pypi.org/project/clawprobe/)
 
-**JanusFlow（中文名：雅努斯流 / 双面神流 · 官方品牌双域名 `janusflow.cn` / `JanusFlow.net` · 原 ClawProbe `clawprobe`）** 是基于 **Joint Anchor Network for Ultra-Scale Flow Identification（双塔解耦加密流表征 + 两阶段开集门神拒识引擎）** 构建的 **移动应用 APK 深度解析与 300 秒真机动态技术检测平台**（当前生产入口：[https://www.atooli.com](https://www.atooli.com) ｜ 官方品牌域名 `janusflow.cn` 与 `JanusFlow.net` 备案接入中）的官方开源 Python API 客户端、命令行工具（`janusflow` / `clawprobe`）与跨平台图形化桌面端参考实现（`janusflow-desktop` / `clawprobe-desktop`）。
+**JanusFlow（中文名：雅努斯流 / 双面神流 · 官方品牌域名：`janusflow.cn` / `JanusFlow.net` / `atooli.com` · 原 ClawProbe `clawprobe`）** 是基于 **Joint Anchor Network for Ultra-Scale Flow Identification（双塔解耦加密流表征 + 两阶段开集门神拒识引擎）** 构建的 **移动应用 APK 深度解析与 300 秒真机动态技术检测平台**（官方品牌域名矩阵：`janusflow.cn` · `JanusFlow.net` · [https://www.atooli.com](https://www.atooli.com)）的官方开源 Python API 客户端、命令行工具（`janusflow` / `clawprobe`）与跨平台图形化桌面端参考实现（`janusflow-desktop` / `clawprobe-desktop`）。
 
 > **品牌核心寓意（JanusFlow · 雅努斯流）**：
 > 雅努斯（Janus）是古罗马神话中的“双面守护门神”，一面洞察过去、一面注视未来，且掌管“门禁（Gate）”。完美契合本系统两大核心架构：
