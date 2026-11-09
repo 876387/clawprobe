@@ -1,3 +1,3 @@
 """ClawProbe — Zero-Dependency Mobile APK Deep Analysis & 300s Dynamic Privacy Inspection CLI & Desktop GUI Client."""
 
-__version__ = "1.3.2"
+__version__ = "1.3.5"

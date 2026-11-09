@@ -1,0 +1,58 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "clawprobe"
+version = "1.3.2"
+description = "ClawProbe (洞察·灵枢): Zero-Dependency Mobile APK Deep Analysis & 300s Dynamic Privacy Inspection CLI & Cross-Platform GUI Demo"
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "Apache-2.0"}
+authors = [
+  {name = "ClawProbe Security Team", email = "876387@gmail.com"}
+]
+keywords = [
+  "android",
+  "apk",
+  "apk-analysis",
+  "privacy",
+  "compliance",
+  "miit",
+  "sdk-detection",
+  "security-testing",
+  "network-analysis"
+]
+classifiers = [
+  "Development Status :: 5 - Production/Stable",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "Intended Audience :: Information Technology",
+  "License :: OSI Approved :: Apache Software License",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Security",
+  "Topic :: Software Development :: Quality Assurance",
+  "Topic :: Software Development :: Testing"
+]
+dependencies = []
+
+[project.urls]
+Homepage = "https://www.atooli.com"
+Documentation = "https://www.atooli.com/#docs-cli"
+Repository = "https://github.com/876387/clawprobe"
+Issues = "https://github.com/876387/clawprobe/issues"
+
+[project.scripts]
+clawprobe = "clawprobe.cli:main"
+clawprobe-desktop = "clawprobe.desktop:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]

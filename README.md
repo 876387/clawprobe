@@ -1,12 +1,17 @@
-# ClawProbe APK Analysis API Client (`clawprobe`)
+# JanusFlow · 雅努斯流 (`JanusFlow.net` · ClawProbe CLI & Desktop GUI `clawprobe`)
 
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![Zero Dependencies](https://img.shields.io/badge/dependencies-0%20(stdlib%20only)-brightgreen.svg)](https://pypi.org/project/clawprobe/)
 
-**ClawProbe (`clawprobe`)** 是 **ClawProbe 移动应用 APK 深度解析与 300 秒真机动态技术检测平台**（[https://www.atooli.com](https://www.atooli.com)）的官方 Python API 客户端与命令行工具。
+**JanusFlow（中文名：雅努斯流 / 双面神流 · `JanusFlow.net` · 原 ClawProbe `clawprobe`）** 是基于 **Joint Anchor Network for Ultra-Scale Flow Identification（双塔解耦加密流表征 + 两阶段开集门神拒识引擎）** 构建的 **移动应用 APK 深度解析与 300 秒真机动态技术检测平台**（当前生产入口：[https://www.atooli.com](https://www.atooli.com) ｜ 全球主域名 `JanusFlow.net` 备案接入中）的官方开源 Python API 客户端、命令行工具（`janusflow` / `clawprobe`）与跨平台图形化桌面端参考实现（`janusflow-desktop` / `clawprobe-desktop`）。
 
-基于 **100% Python 标准库（Zero Third-Party Dependencies）** 构建，内置 **HMAC-SHA256 v2 全报文防重放签名** 与 **证书链公钥指纹校验（SPKI Pinning / Embedded CA）**，一行命令或数行 Python 代码即可调用云端 APK 深度解析 API，自动返回包体静态指纹、17 类第三方 SDK 清单、**「用户点击隐私弹窗同意前抢跑联网」** 毫秒级偏移台账、无水印签封 PDF 报告与原始 PCAP 抓包证据包。
+> **品牌核心寓意（JanusFlow · 雅努斯流）**：
+> 雅努斯（Janus）是古罗马神话中的“双面守护门神”，一面洞察过去、一面注视未来，且掌管“门禁（Gate）”。完美契合本系统两大核心架构：
+> 1. **双面（双塔解耦 · Dual-Tower）**：一面看传输层序列动态（Sequence Tower · 侧信道视角），一面看脱敏握手字节（Byte Tower · 网关视角）；
+> 2. **门神（两阶段开集拒识门控 · Two-Stage Cascade Gate）**：守住网关边界，放行库内已知应用，精准拒识库外未知 OOD 流量与共享第三方 SDK 误报。
+
+基于 **100% Python 标准库（Zero Third-Party Dependencies）** 构建，内置 **HMAC-SHA256 v2 全报文防重放签名**、**SHA-256 内容寻址 24 小时极速秒传（0 字节免重复上传）** 与 **证书链公钥指纹校验（SPKI Pinning / Embedded CA）**，一行命令或数行 Python 代码即可调用云端 APK 深度解析 API，自动返回包体静态指纹、17 类第三方 SDK 清单、**「用户点击隐私弹窗同意前抢跑联网」** 毫秒级偏移台账、无水印签封 PDF 报告与原始 PCAP 抓包证据包。
 
 ---
 

@@ -22,7 +22,7 @@ from clawprobe.client import (
 
 class TestClawProbeOffline(unittest.TestCase):
     def test_version_and_defaults(self):
-        self.assertEqual(__version__, "1.3.2")
+        self.assertEqual(__version__, "1.3.5")
         self.assertEqual(DEFAULT_PUBLIC_ENDPOINT, "https://www.atooli.com")
         self.assertGreaterEqual(len(DEFAULT_PINNED_SPKI_SHA256), 3)
         self.assertIn("BEGIN CERTIFICATE", EMBEDDED_PUBLIC_CA_CHAIN_PEM)
@@ -46,7 +46,7 @@ class TestClawProbeOffline(unittest.TestCase):
             api_key="cnx_live_demo0001",
             sign_secret="sec_demo_secret_0001",
         )
-        self.assertEqual(default_client.pin_mode, "ca")
+        self.assertEqual(default_client.pin_mode, "strict")
 
         custom_pin = "h3mQK/w8dMmMne2+T0gN9L5DAL5BrhfskqFXjK5oOSo="
         strict_client = ClawNexusClient(
@@ -75,7 +75,7 @@ class TestClawProbeOffline(unittest.TestCase):
             text=True,
             check=True,
         )
-        self.assertIn("clawprobe 1.3.2", proc.stdout)
+        self.assertIn("clawprobe 1.3.5", proc.stdout)
 
     def test_desktop_demo_headless_self_test(self):
         proc = subprocess.run(

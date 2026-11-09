@@ -30,10 +30,14 @@ DEFAULT_PUBLIC_ENDPOINT = "https://www.atooli.com"
 #   1. DigiCert Intermediate CA (Encryption Everywhere DV TLS CA - G2) — survives leaf cert rotation
 #   2. DigiCert Global Root G2 — root trust anchor SPKI
 #   3. www.atooli.com current leaf SPKI
+#   4. Dedicated edge endpoint leaf SPKI
+#   5. Dedicated edge root CA SPKI
 DEFAULT_PINNED_SPKI_SHA256: tuple[str, ...] = (
     "gxeKFFaZ2HFJIsTdTjEl6nVo3ckTCX+qzRMqb9Xoa1w=",
     "i7WTqTvh0OioIruIfFR4kMPnBqrS2rdiVPl/s2uC/CY=",
     "h3mQK/w8dMmMne2+T0gN9L5DAL5BrhfskqFXjK5oOSo=",
+    "PHijXDkakE3X7ORsNTDl9Gu+Dp2i30HnJgbkZ5Y++3g=",
+    "sRUaJLJf+ABzALUcKExGeCXTsJv0q3jjywUYeGtWmFs=",
 )
 
 EMBEDDED_PUBLIC_CA_CHAIN_PEM = """-----BEGIN CERTIFICATE-----
@@ -219,6 +223,7 @@ def load_credentials(
     stored_ep = str(stored.get("endpoint") or "").rstrip("/")
     ep = (
         endpoint
+        or os.environ.get("JANUSFLOW_ENDPOINT")
         or os.environ.get("CLAW_ENDPOINT")
         or os.environ.get("CLAWNEXUS_ENDPOINT")
         or (stored_ep if stored_ep.startswith("https://www.atooli.com") else "")
@@ -226,6 +231,7 @@ def load_credentials(
     ).rstrip("/")
     ak = (
         api_key
+        or os.environ.get("JANUSFLOW_API_KEY")
         or os.environ.get("CLAW_API_KEY")
         or os.environ.get("CLAWNEXUS_API_KEY")
         or stored.get("api_key")
@@ -233,6 +239,7 @@ def load_credentials(
     ).strip()
     sk = (
         sign_secret
+        or os.environ.get("JANUSFLOW_SIGN_SECRET")
         or os.environ.get("CLAW_API_SECRET")
         or os.environ.get("CLAW_SIGN_SECRET")
         or os.environ.get("CLAWNEXUS_SIGN_SECRET")
@@ -278,7 +285,7 @@ class ClawNexusClient:
         if raw_mode in ("strict", "ca", "off"):
             self.pin_mode = raw_mode
         else:
-            self.pin_mode = "strict" if self._explicit_spki_pins else "ca"
+            self.pin_mode = "strict"
         self.last_peer_spki_sha256: str = ""
         self.last_spki_pin_matched: bool = False
 
@@ -508,3 +515,7 @@ class ClawNexusClient:
             return st, json.loads(raw.decode("utf-8"))
         except Exception:
             return st, {"raw_text": raw.decode("utf-8", errors="replace")}
+
+
+JanusFlowClient = ClawNexusClient
+ClawProbeClient = ClawNexusClient

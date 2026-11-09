@@ -321,7 +321,7 @@ def generate_developer_integration_snippets(creds: dict[str, Any]) -> dict[str, 
         "          CLAWNEXUS_API_KEY: ${{ secrets.CLAWNEXUS_API_KEY }}\n"
         "          CLAWNEXUS_SIGN_SECRET: ${{ secrets.CLAWNEXUS_SIGN_SECRET }}\n"
         "        run: |\n"
-        f"          pip install {endpoint}/download/clawprobe-1.3.1-py3-none-any.whl\n"
+        f"          pip install {endpoint}/download/clawprobe-1.3.5-py3-none-any.whl\n"
         "          clawprobe analyze ./app-release.apk --attest-authorized --fail-on-preconsent --out ./report.pdf\n"
     )
     return {"cli": cli_snippet, "python": py_snippet, "github_actions": gh_snippet}
@@ -335,7 +335,7 @@ DESKTOP_HTML = """<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8"/>
-<title>ClawProbe Desktop v1.1 — 移动应用 300 秒三阶段真机动态检测工作台</title>
+<title>JanusFlow Desktop v1.2 (雅努斯流 · JanusFlow.net) — 移动应用 300 秒三阶段真机动态检测工作台</title>
 <style>
   :root {
     --bg: #0b1120;
@@ -522,7 +522,7 @@ DESKTOP_HTML = """<!DOCTYPE html>
 </head>
 <body>
   <div class="topbar">
-    <h1>🛡️ ClawProbe Desktop v1.1 — 开源 CLI 图形化参考工作台 (Open-Source CLI GUI Demo · Win/Mac)</h1>
+    <h1>🏛️ JanusFlow Desktop v1.2 · 雅努斯流 — 开源 CLI 图形化参考工作台 (JanusFlow.net · 原 ClawProbe)</h1>
     <div id="authBadge" class="badge-status">正在读取系统安全钥匙串...</div>
   </div>
   <div class="banner">
@@ -858,7 +858,7 @@ async function openReportDir() {
 }
 
 window.addEventListener("DOMContentLoaded", async () => {
-  appendLog("ClawProbe Desktop v1.1 已就绪。报告默认输出目录：~/Desktop/ClawProbe检测报告/");
+  appendLog("JanusFlow Desktop v1.2 (雅努斯流 · ClawProbe CLI GUI) 已就绪。报告默认输出目录：~/Desktop/ClawProbe检测报告/");
   await refreshState();
 });
 </script>
