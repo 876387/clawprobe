@@ -42,6 +42,14 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
+          name: "${{ github.ref_name }} — 雅努斯流 · 双面守护门神 (JanusFlow / 雅努斯流-双面守护门神 · ClawProbe APK 300s 活体检测 CLI)"
+          body: |
+            ## 🏛️ 雅努斯流 · 双面守护门神 (`JanusFlow` / `雅努斯流-双面守护门神` / `clawprobe` ${{ github.ref_name }})
+            - **官方网站**：[https://www.atooli.com](https://www.atooli.com)（`janusflow.cn` · `JanusFlow.net`）
+            - **官方品牌百科**：[《雅努斯流-双面守护门神（JanusFlow）官方品牌与产品总览》](https://www.atooli.com/brand/janusflow.html)
+            - **APK 300s 真机活体检测专页（群体一）**：[https://www.atooli.com/apk](https://www.atooli.com/apk)
+            - **399,756 款双塔加密流量识别与探针仓库（群体二）**：[https://github.com/876387/janusflow-probe](https://github.com/876387/janusflow-probe)（[https://www.atooli.com/traffic](https://www.atooli.com/traffic)）
+            - **一键安装**：`pip install -U clawprobe && clawprobe doctor`
           files: dist/*
           generate_release_notes: true
 
