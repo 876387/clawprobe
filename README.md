@@ -13,6 +13,8 @@
 
 基于 **100% Python 标准库（Zero Third-Party Dependencies）** 构建，内置 **HMAC-SHA256 v2 全报文防重放签名**、**SHA-256 内容寻址 24 小时极速秒传（0 字节免重复上传）** 与 **证书链公钥指纹校验（SPKI Pinning / Embedded CA）**，一行命令或数行 Python 代码即可调用云端 APK 深度解析 API，自动返回包体静态指纹、17 类第三方 SDK 清单、**「用户点击隐私弹窗同意前抢跑联网」** 毫秒级偏移台账、无水印签封 PDF 报告与原始 PCAP 抓包证据包。
 
+> **相关项目**：双塔加密流量在线识别 CLI、FlowSketch 预提取器及边侧 OpenWrt / 核心网 10G 分光探针已独立为 [`876387/janusflow-probe`](https://github.com/876387/janusflow-probe)。两个项目共用同一把 JanusFlow API Key（[自助开通](https://www.atooli.com/#pricing)）。
+
 ---
 
 ## 核心特性 (Key Features)
@@ -50,37 +52,20 @@ clawprobe doctor
 
 ## 快速上手 (Quick Start)
 
-### 1. 统一 API Key 自助购买/卡密兑换与凭据绑定（一钥双服）
+### 1. 配置 API 访问凭据
 
-前往 [JanusFlow 官网自助开通中心 (https://www.atooli.com/#pricing)](https://www.atooli.com/#pricing)（官方品牌域名矩阵：`janusflow.cn` · `JanusFlow.net` · `atooli.com`）通过 **微信/支付宝扫码** 或 **兑换码/卡密 (`CP-XXXX-XXXX-XXXX`)** 秒级获取统一 `API Key + Secret`（及一键订阅串 `cp_sub_v1_...`）。
-
-**同一把 API Key 同时授权以下两大核心 CLI 服务（一钥双服 · 无需重复购买）**：
-- **CLI 服务一（移动应用 APK 300s 活体动态检测）**：`janusflow analyze / job / reclaim / desktop`
-- **CLI 服务二（双塔加密流量在线识别 & 边侧 OpenWrt / 核心网 10G 分光探针）**：`janusflow profile / pcdn-scan / timeline / probe-openwrt / probe-10g-tap`
-
-| 套餐档位 (`tier_code`) | 元旦前特惠价 | APK 300s 活体检测额度 | 双塔加密流量识别日配额 | PCDN 专项扫描额度 | 适用场景与有效期 |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **`PAYG_1`**（单次按量卡） | **¥19.9** | **1 次** | **2,000 流/日** | **5 次** | 单包即时发版自检 + 流量 CLI 尝鲜（365天有效） |
-| **`PAYG_10`**（10次加油包） | **¥159** | **10 次** | **15,000 流/日** | **30 次** | 多版本迭代自检 + 边侧软路由探针接入（365天有效） |
-| **`SUB_MONTH`**（团队包月） | **¥299 / 月** | **25 次/月** | **50,000 流/日** | **100 次/月** | CI/CD 隐私门禁 + 边侧 OpenWrt 软路由探针 24×7 常驻（30天有效） |
-| **`SUB_YEAR`**（企业包年） | **¥2,699 / 年** | **300 次/年** | **500,000 流/日** | **1,200 次/年** | 多应用管理 + 核心网 10G 光纤分光 / OpenWrt 多探针常驻（365天有效） |
-
-获取凭据后，支持以下三种方式一键绑定：
+前往 [ClawProbe 官网工作台 (https://www.atooli.com)](https://www.atooli.com) 申请体验或购买按量/包月 APIKey 后，配置环境变量或执行 `auth login`：
 
 ```bash
-# 方式 A（推荐）：使用官网发放的一键订阅串 cp_sub_v1_... 直接登录（自动配置 Endpoint、Key、Secret 与 SPKI 指纹）
-janusflow auth login --sub cp_sub_v1_xxxxxxxxxxxxxxxx
-
-# 方式 B：显式传入 API Key 与 HMAC Secret（权限自动锁定为 0600）
-janusflow auth login --api-key cnx_live_your_key_id --secret sec_your_hmac_secret
-
-# 方式 C：环境变量配置（适合 CI/CD 流水线、OpenWrt 软路由与 10G 分光服务器）
+# 方式 A：环境变量配置
 export CLAW_API_KEY="cnx_live_your_key_id"
 export CLAW_API_SECRET="sec_your_hmac_secret"
 
-# 验证鉴权并实时查询两大 CLI 服务的剩余配额（APK 次数 / 今日剩余流配额 / PCDN 扫描次数）
-janusflow auth verify
-janusflow usage
+# 方式 B：本地持久化登录（权限自动锁定为 0600）
+clawprobe auth login --api-key cnx_live_your_key_id --secret sec_your_hmac_secret
+
+# 验证鉴权与当前剩余额度
+clawprobe auth verify
 ```
 
 ### 2. 调用 APK 深度解析与 300s 动态检测 API
@@ -121,9 +106,9 @@ clawprobe reclaim <job_id>
 
 ```bash
 # 方式 A：安装 clawprobe 后通过 CLI 子命令或独立入口一键启动桌面工作台 Demo
-janusflow desktop
+clawprobe desktop
 # 或直接执行：
-janusflow-desktop
+clawprobe-desktop
 
 # 方式 B：直接运行跨平台单文件源码脚本（支持 Windows / macOS 二次开发定制）
 python3 desktop_client/clawprobe_desktop.py
@@ -134,63 +119,6 @@ python3 desktop_client/build_windows_exe.py    # 输出 desktop_client/dist/Claw
 ```
 
 详细架构与二次开发说明见：[`desktop_client/README.md`](./desktop_client/README.md)。
-
----
-
-## 双塔加密流量在线识别与两类开源硬件探针接入 (`FlowSketch v2` + `OpenWrt` / `10G TAP`)
-
-除移动应用 APK 活体动态分析外，`janusflow` (`clawprobe`) 同时提供完整的 **双塔（序列塔 Track A + 字节塔 Track B）免解密加密流量识别、两阶段门神 OOD 开集拒识与 PCDN 多子网分片上行拓扑检测 CLI 服务**，并针对**边侧软路由**与**核心网万兆分光**开源了两套标准探针接入套件：
-
-| 探针形态 | 适用场景 | 核心技术特征 | 开源目录与部署指南 |
-| :--- | :--- | :--- | :--- |
-| **方案 A：边侧 OpenWrt 软路由 / 企业分支网关轻量探针** | 园区出口软路由、分支机构 OpenWrt 网关（x86_64 / ARM64 MT798x / R2S/R4S/R5S） | - 仅截每包前 `256B` 头部写入 `/var/run/janusflow` 内存目录（**0 闪存磨损**）；<br/>- 本地 **FlowSketch v2 (`2.0-pa`)** `100x` 压缩为 `.v2.fsk.jsonl.gz`（原始载荷不出内网）；<br/>- 自动解封装 `PPPoE Session` 与 `802.1Q VLAN`，支持融合 `/proc/net/nf_conntrack` 字节计数。 | [`probes/openwrt_edge/`](./probes/openwrt_edge/README.md)<br/>- [`openwrt_probe_agent.py`](./probes/openwrt_edge/openwrt_probe_agent.py)<br/>- [`janusflow-probe.init`](./probes/openwrt_edge/janusflow-probe.init)<br/>- [`install_openwrt_probe.sh`](./probes/openwrt_edge/install_openwrt_probe.sh) |
-| **方案 B：核心网 10G / 40G 光纤分光器 (Optical TAP) / 交换机 SPAN 镜像探针** | 运营商城域网汇聚、高校万兆出口、政企核心交换机无源光纤分光或 ERSPAN/SPAN 旁路服务器 | - 一键锁定万兆镜像口 `promisc on arp off` 与 `ethtool -K tso/gso/gro/lro off` + 对称 Toeplitz RSS 队列哈希；<br/>- 自动解封装 **单/双层 VLAN (QinQ)** 与 **VXLAN (UDP 4789)**；<br/>- 内置 **单遍自适应 TCP MSS 估计 (`est_mss`) 与 `>1500B` 超大帧折叠还原引擎**，消除虚拟交换机 GRO 失真。 | [`probes/core_10g_tap/`](./probes/core_10g_tap/README.md)<br/>- [`tune_10g_tap_nic.sh`](./probes/core_10g_tap/tune_10g_tap_nic.sh)<br/>- [`core_10g_tap_agent.py`](./probes/core_10g_tap/core_10g_tap_agent.py)<br/>- [`janusflow-10g-tap@.service`](./probes/core_10g_tap/janusflow-10g-tap@.service) |
-
-### 1. 离线/在线 FlowSketch v2 提纯、双塔应用识别与 PCDN 拓扑扫描命令
-
-```bash
-# ① 本地将数百 MB 的原始 PCAP/PCAPNG 提纯压缩为几百 KB 的 FlowSketch v2 (.v2.fsk.jsonl.gz)
-janusflow sketch ./capture.pcap -o ./capture.v2.fsk.jsonl.gz
-
-# ② 调用云端 JanusFlow 双塔引擎识别加密应用（58,592 库内应用 + 两阶段 OOD 门神拒识 + 17 类 SDK）
-janusflow profile ./capture.v2.fsk.jsonl.gz \
-  --device-id office-openwrt-01 \
-  --local-cidr 10.0.0.0/8 \
-  --format table
-
-# ③ 调用多子网分片分发类 PCDN 拓扑与上下行包络扫描（大于 6MB 的 PCAP 会自动在本地先转 FlowSketch）
-janusflow pcdn-scan ./campus_egress.pcap.gz \
-  --device-id campus-10g-tap01 \
-  --local-cidr 10.0.0.0/8,100.64.0.0/10 \
-  --local-sketch \
-  --format table
-
-# ④ 查询探针设备过去 1 小时的应用活跃时间线或 PCDN 异常终端时间线
-janusflow timeline --device-id office-openwrt-01 --window 3600 --format table
-janusflow timeline --device-id campus-10g-tap01 --window 3600 --pcdn-only --format table
-```
-
-### 2. 一行命令启动边侧 OpenWrt 探针或核心网 10G 分光探针守护
-
-```bash
-# 方式 A：在边侧 OpenWrt / Linux 网关上启动连续 60s 时间窗探针
-janusflow probe-openwrt \
-  --iface br-lan \
-  --device-id openwrt-branch-01 \
-  --local-cidr 10.0.0.0/8 \
-  --interval 60 \
-  --mode both
-
-# 方式 B：在核心网 10G 分光镜像服务器上启动高吞吐探针（自动校验并关闭网卡 TSO/GSO/GRO）
-sudo -E janusflow probe-10g-tap \
-  --iface eth1 \
-  --device-id core-tap-10g-01 \
-  --local-cidr 10.0.0.0/8,100.64.0.0/10 \
-  --interval 30 \
-  --ring-mb 256 \
-  --enforce-offload-off \
-  --mode both
-```
 
 ---
 

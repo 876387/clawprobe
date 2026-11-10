@@ -106,31 +106,6 @@ class TestClawProbeOffline(unittest.TestCase):
         )
         self.assertIn('"status": "ok"', proc_script.stdout)
 
-    def test_flowsketch_and_openwrt_10g_tap_probes_self_test(self):
-        for subcmd in ("sketch", "probe-openwrt", "probe-10g-tap"):
-            proc = subprocess.run(
-                [sys.executable, "-m", "clawprobe", subcmd, "--self-test"],
-                cwd=str(SRC_DIR),
-                capture_output=True,
-                text=True,
-                check=True,
-            )
-            self.assertIn('"status": "ok"', proc.stdout)
-            self.assertIn('"2.0-pa"', proc.stdout)
-
-        for script_rel in (
-            Path("probes/openwrt_edge/openwrt_probe_agent.py"),
-            Path("probes/core_10g_tap/core_10g_tap_agent.py"),
-        ):
-            proc_agent = subprocess.run(
-                [sys.executable, str(ROOT_DIR / script_rel), "--self-test"],
-                cwd=str(ROOT_DIR),
-                capture_output=True,
-                text=True,
-                check=True,
-            )
-            self.assertIn('"status": "ok"', proc_agent.stdout)
-
     def test_zero_internal_ip_or_secret_leakage(self):
         forbidden_tokens = [
             "192.168.",
@@ -163,11 +138,6 @@ class TestClawProbeOffline(unittest.TestCase):
             list(SRC_DIR.rglob("*.py"))
             + list((ROOT_DIR / "desktop_client").rglob("*.py"))
             + list((ROOT_DIR / "desktop_client").rglob("*.md"))
-            + list((ROOT_DIR / "probes").rglob("*.py"))
-            + list((ROOT_DIR / "probes").rglob("*.md"))
-            + list((ROOT_DIR / "probes").rglob("*.sh"))
-            + list((ROOT_DIR / "probes").rglob("*.init"))
-            + list((ROOT_DIR / "probes").rglob("*.service"))
             + list((ROOT_DIR / "samples").rglob("*.json"))
             + [
                 ROOT_DIR / "README.md",
