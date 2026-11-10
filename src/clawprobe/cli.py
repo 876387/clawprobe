@@ -515,15 +515,17 @@ def main() -> None:
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     sub.add_parser("doctor", help="Check Python/OpenSSL TLS 1.3 support, certificate chain, and ±60s clock skew")
+    sub.add_parser("usage", help="Query unified API Key remaining quotas across APK live inspection, daily traffic flows & PCDN scans")
 
-    p_auth = sub.add_parser("auth", help="Manage CLI authentication credentials")
+    p_auth = sub.add_parser("auth", help="Manage CLI authentication credentials (shared across APK & Traffic CLI services)")
     auth_sub = p_auth.add_subparsers(dest="auth_cmd", required=True)
-    p_login = auth_sub.add_parser("login", help="Store APIKEY, HMAC secret, and endpoint in ~/.clawnexus/credentials.json")
+    p_login = auth_sub.add_parser("login", help="Store APIKEY, HMAC secret (or cp_sub_v1_ subscription token) in ~/.clawnexus/credentials.json")
     p_login.add_argument("--endpoint", default=DEFAULT_PUBLIC_ENDPOINT, help=f"Service endpoint (default: {DEFAULT_PUBLIC_ENDPOINT})")
-    p_login.add_argument("--api-key", required=True)
-    p_login.add_argument("--secret", required=True)
+    p_login.add_argument("--api-key", default=None, help="Commercial API Key (cnx_live_* / cp_live_*)")
+    p_login.add_argument("--secret", default=None, help="HMAC-SHA256 Sign Secret (sec_*)")
+    p_login.add_argument("--sub", default=None, help="One-click subscription token (cp_sub_v1_...) from portal purchase/redeem")
     p_login.add_argument("--spki-pin", default=None)
-    auth_sub.add_parser("verify", help="Verify TLS 1.3 handshake, HMAC v2 authentication, and inspection/probe credits")
+    auth_sub.add_parser("verify", help="Verify TLS 1.3 handshake, HMAC v2 authentication, and unified APK/Traffic quotas")
 
     # === Service A: Mobile APK 300s Live Dynamic Inspection ===
     p_an = sub.add_parser("analyze", help="[APK Service] Submit APK for 300s 3-stage live sandbox technical inspection")
@@ -606,11 +608,15 @@ def main() -> None:
 
     p_tl = sub.add_parser(
         "timeline",
-        help="[Traffic Service] Query aggregated device application or PCDN sliding-window timeline",
+        help="[Traffic Service] Reconstruct per-IP chronological timeline from capture file or query probe sliding-window timeline",
     )
+    p_tl.add_argument("input", nargs="?", default=None, help="Optional capture file (.pcap, .pcapng, .fsk.jsonl.gz) for timeline reconstruction")
+    p_tl.add_argument("--target-ip", default="", help="Optional internal endpoint IP filter (e.g. 10.0.0.25)")
     p_tl.add_argument("--device-id", default="edge-probe-01")
     p_tl.add_argument("--window", type=int, default=3600, help="Lookback window in seconds (default 3600)")
     p_tl.add_argument("--pcdn-only", action="store_true", help="Filter timeline to PCDN sliding-window & scan events only")
+    p_tl.add_argument("--local-sketch", action="store_true", help="Pre-extract .fsk.jsonl.gz locally before upload")
+    p_tl.add_argument("--out", default=None, help="Optional JSON output file path")
     p_tl.add_argument("--format", choices=["json", "table"], default="table")
 
     p_owrt = sub.add_parser(
@@ -699,14 +705,35 @@ def main() -> None:
         return
 
     if args.cmd == "auth" and args.auth_cmd == "login":
-        saved = save_credentials(args.endpoint, args.api_key, args.secret, spki_pin=args.spki_pin)
+        eff_ep = args.endpoint or DEFAULT_PUBLIC_ENDPOINT
+        eff_key = args.api_key
+        eff_sec = args.secret
+        eff_pin = args.spki_pin
+        if getattr(args, "sub", None):
+            import base64
+            tok = args.sub.strip()
+            if tok.startswith("clawprobe://") and "sub=" in tok:
+                tok = tok.split("sub=", 1)[1].split("&", 1)[0]
+            if not tok.startswith("cp_sub_v1_"):
+                parser.error("Invalid --sub token (expected cp_sub_v1_...)")
+            b64_part = tok[len("cp_sub_v1_") :]
+            pad = "=" * ((4 - len(b64_part) % 4) % 4)
+            sub_obj = json.loads(base64.urlsafe_b64decode(b64_part + pad).decode("utf-8"))
+            eff_ep = sub_obj.get("e") or eff_ep
+            eff_key = sub_obj.get("k")
+            eff_sec = sub_obj.get("s")
+            eff_pin = sub_obj.get("p") or eff_pin
+        if not eff_key or not eff_sec:
+            parser.error("Provide either `--sub cp_sub_v1_...` or both `--api-key` and `--secret`")
+        saved = save_credentials(eff_ep, eff_key, eff_sec, spki_pin=eff_pin)
         print(
             json.dumps(
                 {
                     "status": "saved",
                     "credentials_file": str(saved),
-                    "endpoint": (args.endpoint or DEFAULT_PUBLIC_ENDPOINT).rstrip("/"),
-                    "spki_pinning": "strict" if args.spki_pin else "ca_chain_verified",
+                    "endpoint": (eff_ep or DEFAULT_PUBLIC_ENDPOINT).rstrip("/"),
+                    "spki_pinning": "strict" if eff_pin else "ca_chain_verified",
+                    "unified_services": ["apk_live_inspection", "dual_tower_traffic_identification", "openwrt_10g_tap_probes"],
                 },
                 indent=2,
             )
@@ -717,6 +744,11 @@ def main() -> None:
 
     if args.cmd == "doctor":
         sys.exit(_run_doctor(client))
+
+    if args.cmd == "usage":
+        st, body = client.request_json("GET", "/api/v1/usage/summary")
+        print(json.dumps(body, indent=2, ensure_ascii=False))
+        sys.exit(0 if st == 200 else 1)
 
     if args.cmd == "auth" and args.auth_cmd == "verify":
         st, body = client.request_json("GET", "/api/v1/auth/verify")
@@ -768,20 +800,39 @@ def main() -> None:
         return
 
     if args.cmd == "timeline":
-        q_params: Dict[str, Any] = {"device_id": args.device_id, "window_sec": args.window}
-        if args.pcdn_only:
-            q_params["pcdn_only"] = "true"
-        qs = urllib.parse.urlencode(q_params)
-        st, body = client.request_json("GET", f"/api/v2/traffic/timeline?{qs}")
+        if getattr(args, "input", None):
+            fpath = Path(args.input)
+            if not fpath.exists():
+                print(json.dumps({"status": "error", "message": f"File not found: {fpath}"}), file=sys.stderr)
+                sys.exit(1)
+            fields = {"device_id": args.device_id}
+            if getattr(args, "target_ip", ""):
+                fields["target_ip"] = args.target_ip.strip()
+            is_sketch = fpath.name.endswith(".fsk.jsonl") or fpath.name.endswith(".fsk.jsonl.gz")
+            if (not is_sketch) and (args.local_sketch or fpath.stat().st_size > AUTO_FLOWSKETCH_THRESHOLD_BYTES):
+                with tempfile.TemporaryDirectory(prefix="janusflow_tl_") as tmp_dir:
+                    tmp_fsk = Path(tmp_dir) / f"{fpath.stem}.v2.fsk.jsonl.gz"
+                    convert_pcap_file_to_flowsketch_gz(fpath, output_path=tmp_fsk)
+                    st, body = client.upload_multipart("/api/v2/traffic/timeline", file_path=tmp_fsk, fields=fields)
+            else:
+                st, body = client.upload_multipart("/api/v2/traffic/timeline", file_path=fpath, fields=fields)
+        else:
+            q_params: Dict[str, Any] = {"device_id": args.device_id, "window_sec": args.window}
+            if args.pcdn_only:
+                q_params["pcdn_only"] = "true"
+            qs = urllib.parse.urlencode(q_params)
+            st, body = client.request_json("GET", f"/api/v2/traffic/timeline?{qs}")
         if st != 200:
             print(json.dumps(body, indent=2, ensure_ascii=False), file=sys.stderr)
             sys.exit(1)
+        if getattr(args, "out", None):
+            Path(args.out).write_text(json.dumps(body, indent=2, ensure_ascii=False), encoding="utf-8")
         if args.format == "table":
             if args.pcdn_only:
                 print(_render_pcdn_timeline_table(body))
             else:
                 lines = [
-                    f"=== JanusFlow Device Timeline ({body.get('device_id')} | Last {body.get('window_sec')}s | Periods={body.get('total_periods')}) ==="
+                    f"=== JanusFlow Device Timeline ({body.get('device_id')} | Last {body.get('window_sec', args.window)}s | Periods={body.get('total_periods', 1)}) ==="
                 ]
                 for a in body.get("active_apps_summary", []):
                     lines.append(

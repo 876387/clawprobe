@@ -21,14 +21,19 @@ flowchart LR
 
 ---
 
-## 二、 快速接入方式（三种任选）
+## 二、 统一 API Key 获取与快速接入方式（一钥双服）
+
+> **🔑 统一 API Key 购买与鉴权说明**：
+> 边侧 OpenWrt 探针与 APK 活体动态检测 CLI 共用同一套 API Key 体系。前往官网 [https://www.atooli.com/#pricing](https://www.atooli.com/#pricing) 扫码开通或卡密兑换（`PAYG_1` ¥19.9 含 2,000 流/日、`PAYG_10` ¥159 含 15,000 流/日、`SUB_MONTH` ¥299/月含 50,000 流/日 24×7 常驻、`SUB_YEAR` ¥2,699/年含 500,000 流/日），即可获得 `API Key + Secret` 或一键订阅串 `cp_sub_v1_...`。
 
 ### 方式 1：在已安装 `clawprobe` / `janusflow` CLI 的 Linux / OpenWrt x86 网关上一行命令启动
 
 ```bash
 pip install -U clawprobe
 
-# 1. 登录并持久化保存 API Key 与签名密钥（0600 权限）
+# 1. 登录并持久化保存统一 API Key（支持一键导入官网 cp_sub_v1_ 订阅串或显式 Key/Secret）
+janusflow auth login --sub cp_sub_v1_xxxxxxxxxxxxxxxx
+# 或：
 janusflow auth login \
   --endpoint https://www.atooli.com \
   --api-key cnx_live_your_key_id \

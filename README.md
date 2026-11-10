@@ -50,20 +50,37 @@ clawprobe doctor
 
 ## 快速上手 (Quick Start)
 
-### 1. 配置 API 访问凭据
+### 1. 统一 API Key 自助购买/卡密兑换与凭据绑定（一钥双服）
 
-前往 [ClawProbe 官网工作台 (https://www.atooli.com)](https://www.atooli.com) 申请体验或购买按量/包月 APIKey 后，配置环境变量或执行 `auth login`：
+前往 [JanusFlow 官网自助开通中心 (https://www.atooli.com/#pricing)](https://www.atooli.com/#pricing)（官方品牌域名矩阵：`janusflow.cn` · `JanusFlow.net` · `atooli.com`）通过 **微信/支付宝扫码** 或 **兑换码/卡密 (`CP-XXXX-XXXX-XXXX`)** 秒级获取统一 `API Key + Secret`（及一键订阅串 `cp_sub_v1_...`）。
+
+**同一把 API Key 同时授权以下两大核心 CLI 服务（一钥双服 · 无需重复购买）**：
+- **CLI 服务一（移动应用 APK 300s 活体动态检测）**：`janusflow analyze / job / reclaim / desktop`
+- **CLI 服务二（双塔加密流量在线识别 & 边侧 OpenWrt / 核心网 10G 分光探针）**：`janusflow profile / pcdn-scan / timeline / probe-openwrt / probe-10g-tap`
+
+| 套餐档位 (`tier_code`) | 元旦前特惠价 | APK 300s 活体检测额度 | 双塔加密流量识别日配额 | PCDN 专项扫描额度 | 适用场景与有效期 |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **`PAYG_1`**（单次按量卡） | **¥19.9** | **1 次** | **2,000 流/日** | **5 次** | 单包即时发版自检 + 流量 CLI 尝鲜（365天有效） |
+| **`PAYG_10`**（10次加油包） | **¥159** | **10 次** | **15,000 流/日** | **30 次** | 多版本迭代自检 + 边侧软路由探针接入（365天有效） |
+| **`SUB_MONTH`**（团队包月） | **¥299 / 月** | **25 次/月** | **50,000 流/日** | **100 次/月** | CI/CD 隐私门禁 + 边侧 OpenWrt 软路由探针 24×7 常驻（30天有效） |
+| **`SUB_YEAR`**（企业包年） | **¥2,699 / 年** | **300 次/年** | **500,000 流/日** | **1,200 次/年** | 多应用管理 + 核心网 10G 光纤分光 / OpenWrt 多探针常驻（365天有效） |
+
+获取凭据后，支持以下三种方式一键绑定：
 
 ```bash
-# 方式 A：环境变量配置
+# 方式 A（推荐）：使用官网发放的一键订阅串 cp_sub_v1_... 直接登录（自动配置 Endpoint、Key、Secret 与 SPKI 指纹）
+janusflow auth login --sub cp_sub_v1_xxxxxxxxxxxxxxxx
+
+# 方式 B：显式传入 API Key 与 HMAC Secret（权限自动锁定为 0600）
+janusflow auth login --api-key cnx_live_your_key_id --secret sec_your_hmac_secret
+
+# 方式 C：环境变量配置（适合 CI/CD 流水线、OpenWrt 软路由与 10G 分光服务器）
 export CLAW_API_KEY="cnx_live_your_key_id"
 export CLAW_API_SECRET="sec_your_hmac_secret"
 
-# 方式 B：本地持久化登录（权限自动锁定为 0600）
-clawprobe auth login --api-key cnx_live_your_key_id --secret sec_your_hmac_secret
-
-# 验证鉴权与当前剩余额度
-clawprobe auth verify
+# 验证鉴权并实时查询两大 CLI 服务的剩余配额（APK 次数 / 今日剩余流配额 / PCDN 扫描次数）
+janusflow auth verify
+janusflow usage
 ```
 
 ### 2. 调用 APK 深度解析与 300s 动态检测 API

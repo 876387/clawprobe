@@ -46,14 +46,19 @@ sudo bash tune_10g_tap_nic.sh eth1
 
 ---
 
-### 第二步：通过 `janusflow` CLI 或独立守护进程启动 10G 分光探针
+### 第二步：绑定统一 API Key 并启动 10G 分光探针（一钥双服）
+
+> **🔑 统一 API Key 购买与鉴权说明**：
+> 核心网 10G 分光探针与 APK 活体动态检测 CLI 共用同一套 API Key 体系。前往官网 [https://www.atooli.com/#pricing](https://www.atooli.com/#pricing) 扫码开通或卡密兑换（推荐 `SUB_MONTH` ¥299/月含 50,000 流/日 + 100 次 PCDN 扫描，或 `SUB_YEAR` ¥2,699/年含 500,000 流/日 + 1,200 次 PCDN 扫描），即可获得 `API Key + Secret` 或一键订阅串 `cp_sub_v1_...`。
 
 #### 方式 A：使用 `janusflow probe-10g-tap` 命令直接启动
 
 ```bash
 pip install -U clawprobe
 
-# 1. 配置鉴权凭据
+# 1. 配置统一 API Key 凭据（支持一键导入官网 cp_sub_v1_ 订阅串或显式 Key/Secret）
+janusflow auth login --sub cp_sub_v1_xxxxxxxxxxxxxxxx
+# 或：
 janusflow auth login \
   --endpoint https://www.atooli.com \
   --api-key cnx_live_your_key_id \
