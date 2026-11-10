@@ -104,9 +104,9 @@ clawprobe reclaim <job_id>
 
 ```bash
 # 方式 A：安装 clawprobe 后通过 CLI 子命令或独立入口一键启动桌面工作台 Demo
-clawprobe desktop
+janusflow desktop
 # 或直接执行：
-clawprobe-desktop
+janusflow-desktop
 
 # 方式 B：直接运行跨平台单文件源码脚本（支持 Windows / macOS 二次开发定制）
 python3 desktop_client/clawprobe_desktop.py
@@ -117,6 +117,63 @@ python3 desktop_client/build_windows_exe.py    # 输出 desktop_client/dist/Claw
 ```
 
 详细架构与二次开发说明见：[`desktop_client/README.md`](./desktop_client/README.md)。
+
+---
+
+## 双塔加密流量在线识别与两类开源硬件探针接入 (`FlowSketch v2` + `OpenWrt` / `10G TAP`)
+
+除移动应用 APK 活体动态分析外，`janusflow` (`clawprobe`) 同时提供完整的 **双塔（序列塔 Track A + 字节塔 Track B）免解密加密流量识别、两阶段门神 OOD 开集拒识与 PCDN 多子网分片上行拓扑检测 CLI 服务**，并针对**边侧软路由**与**核心网万兆分光**开源了两套标准探针接入套件：
+
+| 探针形态 | 适用场景 | 核心技术特征 | 开源目录与部署指南 |
+| :--- | :--- | :--- | :--- |
+| **方案 A：边侧 OpenWrt 软路由 / 企业分支网关轻量探针** | 园区出口软路由、分支机构 OpenWrt 网关（x86_64 / ARM64 MT798x / R2S/R4S/R5S） | - 仅截每包前 `256B` 头部写入 `/var/run/janusflow` 内存目录（**0 闪存磨损**）；<br/>- 本地 **FlowSketch v2 (`2.0-pa`)** `100x` 压缩为 `.v2.fsk.jsonl.gz`（原始载荷不出内网）；<br/>- 自动解封装 `PPPoE Session` 与 `802.1Q VLAN`，支持融合 `/proc/net/nf_conntrack` 字节计数。 | [`probes/openwrt_edge/`](./probes/openwrt_edge/README.md)<br/>- [`openwrt_probe_agent.py`](./probes/openwrt_edge/openwrt_probe_agent.py)<br/>- [`janusflow-probe.init`](./probes/openwrt_edge/janusflow-probe.init)<br/>- [`install_openwrt_probe.sh`](./probes/openwrt_edge/install_openwrt_probe.sh) |
+| **方案 B：核心网 10G / 40G 光纤分光器 (Optical TAP) / 交换机 SPAN 镜像探针** | 运营商城域网汇聚、高校万兆出口、政企核心交换机无源光纤分光或 ERSPAN/SPAN 旁路服务器 | - 一键锁定万兆镜像口 `promisc on arp off` 与 `ethtool -K tso/gso/gro/lro off` + 对称 Toeplitz RSS 队列哈希；<br/>- 自动解封装 **单/双层 VLAN (QinQ)** 与 **VXLAN (UDP 4789)**；<br/>- 内置 **单遍自适应 TCP MSS 估计 (`est_mss`) 与 `>1500B` 超大帧折叠还原引擎**，消除虚拟交换机 GRO 失真。 | [`probes/core_10g_tap/`](./probes/core_10g_tap/README.md)<br/>- [`tune_10g_tap_nic.sh`](./probes/core_10g_tap/tune_10g_tap_nic.sh)<br/>- [`core_10g_tap_agent.py`](./probes/core_10g_tap/core_10g_tap_agent.py)<br/>- [`janusflow-10g-tap@.service`](./probes/core_10g_tap/janusflow-10g-tap@.service) |
+
+### 1. 离线/在线 FlowSketch v2 提纯、双塔应用识别与 PCDN 拓扑扫描命令
+
+```bash
+# ① 本地将数百 MB 的原始 PCAP/PCAPNG 提纯压缩为几百 KB 的 FlowSketch v2 (.v2.fsk.jsonl.gz)
+janusflow sketch ./capture.pcap -o ./capture.v2.fsk.jsonl.gz
+
+# ② 调用云端 JanusFlow 双塔引擎识别加密应用（58,592 库内应用 + 两阶段 OOD 门神拒识 + 17 类 SDK）
+janusflow profile ./capture.v2.fsk.jsonl.gz \
+  --device-id office-openwrt-01 \
+  --local-cidr 10.0.0.0/8 \
+  --format table
+
+# ③ 调用多子网分片分发类 PCDN 拓扑与上下行包络扫描（大于 6MB 的 PCAP 会自动在本地先转 FlowSketch）
+janusflow pcdn-scan ./campus_egress.pcap.gz \
+  --device-id campus-10g-tap01 \
+  --local-cidr 10.0.0.0/8,100.64.0.0/10 \
+  --local-sketch \
+  --format table
+
+# ④ 查询探针设备过去 1 小时的应用活跃时间线或 PCDN 异常终端时间线
+janusflow timeline --device-id office-openwrt-01 --window 3600 --format table
+janusflow timeline --device-id campus-10g-tap01 --window 3600 --pcdn-only --format table
+```
+
+### 2. 一行命令启动边侧 OpenWrt 探针或核心网 10G 分光探针守护
+
+```bash
+# 方式 A：在边侧 OpenWrt / Linux 网关上启动连续 60s 时间窗探针
+janusflow probe-openwrt \
+  --iface br-lan \
+  --device-id openwrt-branch-01 \
+  --local-cidr 10.0.0.0/8 \
+  --interval 60 \
+  --mode both
+
+# 方式 B：在核心网 10G 分光镜像服务器上启动高吞吐探针（自动校验并关闭网卡 TSO/GSO/GRO）
+sudo -E janusflow probe-10g-tap \
+  --iface eth1 \
+  --device-id core-tap-10g-01 \
+  --local-cidr 10.0.0.0/8,100.64.0.0/10 \
+  --interval 30 \
+  --ring-mb 256 \
+  --enforce-offload-off \
+  --mode both
+```
 
 ---
 

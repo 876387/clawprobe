@@ -52,6 +52,7 @@ clawprobe = "clawprobe.cli:main"
 clawprobe-desktop = "clawprobe.desktop:main"
 janusflow = "clawprobe.cli:main"
 janusflow-desktop = "clawprobe.desktop:main"
+janusflow-sketch = "clawprobe.flowsketch:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
