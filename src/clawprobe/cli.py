@@ -27,7 +27,12 @@ import ssl
 import stat
 import sys
 import time
+import urllib.parse
 from pathlib import Path
+
+_SRC_DIR = Path(__file__).resolve().parent.parent
+if str(_SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(_SRC_DIR))
 
 from clawprobe import __version__
 from clawprobe.client import (
@@ -155,7 +160,160 @@ def _reclaim_job(client: ClawNexusClient, job_id: str) -> dict:
     return body.get("reclaim_receipt", body)
 
 
-def main() -> None:
+def _extract_flow_domain_stdlib(flow: dict) -> str:
+    for k in ("effective_domain", "tls_sni", "http_host", "dns_resolved_domain", "resolved_domain"):
+        val = str(flow.get(k) or "").strip().lower()
+        if val:
+            return val
+    rip = str(flow.get("remote_ip") or "").strip()
+    rport = flow.get("remote_port")
+    if rip and rport:
+        return f"{rip}:{rport}"
+    return rip or "unknown_endpoint"
+
+
+def _extract_stage1_flows_stdlib(report: dict) -> list[dict]:
+    l1 = report.get("layer1_deterministic_network_ledger") or {}
+    flows = l1.get("flows") or []
+    anchors = set(l1.get("pre_consent_flow_anchors") or [])
+    stage1_flows = []
+    for f in flows:
+        stages = f.get("stages_active") or []
+        is_s1 = (
+            bool(f.get("pre_consent_flow"))
+            or int(f.get("stage_first_seen") or 0) == 1
+            or (1 in stages)
+            or (str(f.get("flow_id") or "") in anchors)
+        )
+        if is_s1:
+            stage1_flows.append(f)
+    return stage1_flows
+
+
+def _compare_inspection_reports_stdlib(
+    before_report: dict,
+    after_report: dict,
+    delegating_org: str = "",
+    service_partner_name: str = "",
+) -> dict:
+    b_l1 = before_report.get("layer1_deterministic_network_ledger") or {}
+    a_l1 = after_report.get("layer1_deterministic_network_ledger") or {}
+    b_s1_flows = _extract_stage1_flows_stdlib(before_report)
+    a_s1_flows = _extract_stage1_flows_stdlib(after_report)
+
+    b_s1_count = int((b_l1.get("summary") or {}).get("pre_consent_flow_count", len(b_s1_flows)))
+    if len(b_s1_flows) != b_s1_count and b_s1_flows:
+        b_s1_count = len(b_s1_flows)
+    a_s1_count = int((a_l1.get("summary") or {}).get("pre_consent_flow_count", len(a_s1_flows)))
+    if len(a_s1_flows) != a_s1_count and (a_s1_flows or a_s1_count == 0):
+        a_s1_count = len(a_s1_flows)
+
+    b_s1_domains = sorted({_extract_flow_domain_stdlib(f) for f in b_s1_flows if _extract_flow_domain_stdlib(f)})
+    a_s1_domains = sorted({_extract_flow_domain_stdlib(f) for f in a_s1_flows if _extract_flow_domain_stdlib(f)})
+    b_s1_set = set(b_s1_domains)
+    a_s1_set = set(a_s1_domains)
+    eliminated_stage1 = sorted(b_s1_set - a_s1_set)
+    remaining_stage1 = sorted(b_s1_set & a_s1_set)
+    regressed_stage1 = sorted(a_s1_set - b_s1_set)
+
+    reduction_count = max(0, b_s1_count - a_s1_count)
+    reduction_pct = round(((b_s1_count - a_s1_count) / float(b_s1_count)) * 100.0, 1) if b_s1_count > 0 else (100.0 if a_s1_count == 0 else -100.0)
+    if a_s1_count == 0:
+        s1_status = "STAGE1_CLEARED"
+        s1_human_summary = "本次检测条件下（约300秒三阶段动态运行）未观测到同意前联网"
+    elif a_s1_count > b_s1_count or regressed_stage1:
+        s1_status = "REGRESSED"
+        s1_human_summary = f"本次检测条件下阶段1观测到 {a_s1_count} 条外联流（较整改前增加或出现新域名）"
+    elif a_s1_count < b_s1_count or eliminated_stage1:
+        s1_status = "PARTIAL_IMPROVED"
+        s1_human_summary = f"本次检测条件下阶段1外联流由 {b_s1_count} 条减少至 {a_s1_count} 条（部分消减）"
+    else:
+        s1_status = "UNCHANGED"
+        s1_human_summary = f"本次检测条件下阶段1外联流保持 {a_s1_count} 条（无明显变化）"
+
+    def _sdk_stage_map(rep: dict) -> dict[str, set[int]]:
+        flows = (rep.get("layer1_deterministic_network_ledger") or {}).get("flows") or []
+        out: dict[str, set[int]] = {}
+        for f in flows:
+            sdk = str(f.get("matched_sdk") or "").strip()
+            if not sdk or sdk == "Host/Unclassified":
+                continue
+            stages = {int(s) for s in (f.get("stages_active") or []) if int(s) in (1, 2, 3)}
+            if f.get("pre_consent_flow") or int(f.get("stage_first_seen") or 0) == 1:
+                stages.add(1)
+            elif not stages:
+                stages.add(int(f.get("stage_first_seen") or 2))
+            out.setdefault(sdk, set()).update(stages)
+        return out
+
+    b_sdk = _sdk_stage_map(before_report)
+    a_sdk = _sdk_stage_map(after_report)
+    deferred_sdks = sorted(
+        sdk for sdk in set(b_sdk) | set(a_sdk)
+        if 1 in b_sdk.get(sdk, set()) and 1 not in a_sdk.get(sdk, set())
+    )
+
+    return {
+        "report_title": "移动应用网络通联与隐私合规整改前后对比技术分析单（自查参考）",
+        "delegating_org": str(delegating_org or ""),
+        "service_partner_name": str(service_partner_name or ""),
+        "stage1_preconsent_diff": {
+            "before_preconsent_flow_count": b_s1_count,
+            "after_preconsent_flow_count": a_s1_count,
+            "flow_count_delta": a_s1_count - b_s1_count,
+            "delta_flow_count": a_s1_count - b_s1_count,
+            "reduction_count": reduction_count,
+            "reduction_pct": reduction_pct,
+            "before_stage1_domains": b_s1_domains,
+            "after_stage1_domains": a_s1_domains,
+            "eliminated_stage1_domains": eliminated_stage1,
+            "remaining_stage1_domains": remaining_stage1,
+            "regressed_stage1_domains": regressed_stage1,
+            "status_tag": s1_status,
+            "status_human_summary": s1_human_summary,
+        },
+        "sdk_stage_migration_diff": {
+            "before_stage1_sdks": sorted(k for k, v in b_sdk.items() if 1 in v),
+            "after_stage1_sdks": sorted(k for k, v in a_sdk.items() if 1 in v),
+            "deferred_to_post_consent_sdks": deferred_sdks,
+        },
+        "roi_closer_card": {
+            "annual_plan_price_yuan": 2699.0,
+            "annual_plan_quota": 300,
+            "annual_plan_unit_cost_yuan": 8.99,
+            "monthly_plan_yuan": 299.0,
+            "monthly_plan_quota": 25,
+            "monthly_plan_unit_cost_yuan": 11.96,
+        },
+    }
+
+
+def _write_minimal_pdf_stdlib(diff_report: dict, output_pdf_path: Path) -> dict:
+    output_pdf_path.parent.mkdir(parents=True, exist_ok=True)
+    s1 = diff_report.get("stage1_preconsent_diff") or {}
+    summary_line = (
+        f"ClawProbe Diff Summary | status={s1.get('status_tag')} | "
+        f"before={s1.get('before_preconsent_flow_count')} -> after={s1.get('after_preconsent_flow_count')}"
+    )
+    stream_bytes = f"BT /F1 11 Tf 48 760 Td ({summary_line}) Tj ET".encode("ascii", errors="replace")
+    pdf_bytes = (
+        b"%PDF-1.4\n"
+        b"1 0 obj<< /Type /Catalog /Pages 2 0 R >>endobj\n"
+        b"2 0 obj<< /Type /Pages /Kids [3 0 R] /Count 1 >>endobj\n"
+        b"3 0 obj<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 4 0 R "
+        b"/Resources << /Font << /F1 5 0 R >> >> >>endobj\n"
+        + f"4 0 obj<< /Length {len(stream_bytes)} >>stream\n".encode("ascii")
+        + stream_bytes
+        + b"\nendstream\nendobj\n"
+        b"5 0 obj<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>endobj\n"
+        b"xref\n0 6\n0000000000 65535 f \n"
+        b"trailer<< /Size 6 /Root 1 0 R >>\nstartxref\n0\n%%EOF\n"
+    )
+    output_pdf_path.write_bytes(pdf_bytes)
+    return {"pdf_path": str(output_pdf_path), "pdf_size_bytes": len(pdf_bytes)}
+
+
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="clawprobe",
         description="ClawProbe APK Deep Analysis & 300s Live Dynamic Technical Inspection API Client (v1.3)",
@@ -195,9 +353,11 @@ def main() -> None:
     p_an.add_argument("--fail-on-preconsent", action="store_true", default=False, help="Exit code 2 if Stage-1 pre-consent flows exist")
     p_an.add_argument("--queue-timeout", type=int, default=900, help="Max seconds to wait in queue if all sandboxes are busy (default 900)")
     p_an.add_argument("--no-wait", action="store_true", default=False, help="Return job_id immediately without polling")
-    p_an.add_argument("--out", default=None, help="Output path for PDF Technical Inspection Report")
-    p_an.add_argument("--json-out", default=None, help="Output path for JSON Technical Inspection Report")
+    p_an.add_argument("--out", default=None, help="Output path for PDF Technical Analysis Report")
+    p_an.add_argument("--json-out", default=None, help="Output path for JSON Technical Analysis Report")
     p_an.add_argument("--bundle", default=None, help="Output path for full ZIP bundle (PDF+JSON+PCAP+SHA256)")
+    p_an.add_argument("--delegating-org", default="", help="Optional delegating organization name (委托自查单位名称, max 64 chars)")
+    p_an.add_argument("--service-partner", default="", help="Optional technical service partner name (技术服务协作方/代办机构名称, max 64 chars)")
     p_an.add_argument(
         "--reclaim",
         action="store_true",
@@ -221,6 +381,25 @@ def main() -> None:
     p_rec = sub.add_parser("reclaim", help="Immediately 3-pass overwrite & zero-shred server-side artifacts for a completed job")
     p_rec.add_argument("job_id", help="Job ID (cn_apk_*)")
 
+    p_sub = sub.add_parser(
+        "subclients",
+        help="List agency multi-subclient inspection report ledger grouped by delegating organization (`delegating_org`) and tenant quota summary",
+    )
+    p_sub.add_argument("--org", default="", help="Optional filter by delegating organization name (委托自查单位名称)")
+    p_sub.add_argument("--limit", type=int, default=50, help="Maximum recent jobs to inspect (1..200, default 50)")
+    p_sub.add_argument("--json", action="store_true", default=False, help="Print raw JSON ledger output")
+
+    p_diff = sub.add_parser(
+        "diff",
+        help="Generate Before-vs-After Remediation Diff Technical Analysis Report (supports offline local JSON paths or online job IDs)",
+    )
+    p_diff.add_argument("--before", required=True, help="Path to before report.json OR remote job_id (cn_apk_*)")
+    p_diff.add_argument("--after", required=True, help="Path to after report.json OR remote job_id (cn_apk_*)")
+    p_diff.add_argument("--delegating-org", default="", help="Optional delegating organization name (委托自查单位名称)")
+    p_diff.add_argument("--service-partner", default="", help="Optional service partner / agency name (技术服务协作方名称)")
+    p_diff.add_argument("--out", default=None, help="Output path for Remediation Diff PDF report")
+    p_diff.add_argument("--json-out", default=None, help="Output path for Remediation Diff JSON report")
+
     p_desk = sub.add_parser(
         "desktop",
         help="Launch the Open-Source Cross-Platform (Windows/macOS) Desktop GUI Reference Workbench Demo",
@@ -229,7 +408,114 @@ def main() -> None:
     p_desk.add_argument("--status", action="store_true", help="Print current desktop credential & OS keychain status as JSON")
     p_desk.add_argument("--headless-self-test", action="store_true", help="Run system keychain & snippet generation self-test")
 
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
+
+    if args.cmd == "diff":
+        b_raw = str(args.before or "").strip()
+        a_raw = str(args.after or "").strip()
+        if b_raw.startswith("cn_apk_") and a_raw.startswith("cn_apk_"):
+            import base64
+
+            client = _build_client(args)
+            st, body = client.request_json(
+                "POST",
+                "/api/v1/inspect/diff",
+                payload={
+                    "before_job_id": b_raw,
+                    "after_job_id": a_raw,
+                    "delegating_org": getattr(args, "delegating_org", ""),
+                    "service_partner_name": getattr(args, "service_partner", ""),
+                    "render_pdf": bool(args.out),
+                },
+            )
+            if st != 200:
+                print(json.dumps(body, indent=2, ensure_ascii=False), file=sys.stderr)
+                sys.exit(1)
+            pdf_art = dict(body.get("pdf_artifact") or {})
+            pdf_b64 = pdf_art.pop("pdf_base64", None)
+            if args.out and pdf_b64:
+                out_p = Path(args.out)
+                out_p.parent.mkdir(parents=True, exist_ok=True)
+                out_p.write_bytes(base64.b64decode(pdf_b64))
+                pdf_art["pdf_out"] = str(out_p)
+                body["pdf_out"] = str(out_p)
+            if body.get("pdf_artifact") is not None:
+                body["pdf_artifact"] = pdf_art
+            if args.json_out and body.get("diff_report"):
+                jp = Path(args.json_out)
+                jp.parent.mkdir(parents=True, exist_ok=True)
+                jp.write_text(json.dumps(body["diff_report"], indent=2, ensure_ascii=False), encoding="utf-8")
+                body["json_out"] = str(jp)
+            print(json.dumps(body, indent=2, ensure_ascii=False))
+            return 0
+
+        b_path = Path(b_raw)
+        a_path = Path(a_raw)
+        if not b_path.is_file() or not a_path.is_file():
+            print(
+                json.dumps(
+                    {
+                        "status": "error",
+                        "error_code": "ERR_DIFF_INPUT_NOT_FOUND",
+                        "message": f"Local diff report JSON file not found: before={b_raw}, after={a_raw}",
+                    },
+                    indent=2,
+                    ensure_ascii=False,
+                ),
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+        b_rep = json.loads(b_path.read_text(encoding="utf-8"))
+        a_rep = json.loads(a_path.read_text(encoding="utf-8"))
+        eng_mod = next(
+            (
+                m
+                for k, m in list(sys.modules.items())
+                if k.endswith("diff_report_engine") and hasattr(m, "compare_inspection_reports")
+            ),
+            None,
+        )
+        if eng_mod is not None:
+            diff_obj = eng_mod.compare_inspection_reports(
+                before_report=b_rep,
+                after_report=a_rep,
+                delegating_org=getattr(args, "delegating_org", ""),
+                service_partner_name=getattr(args, "service_partner", ""),
+            )
+            pdf_info = eng_mod.render_remediation_diff_pdf(diff_obj, Path(args.out)) if args.out else None
+        else:
+            diff_obj = _compare_inspection_reports_stdlib(
+                before_report=b_rep,
+                after_report=a_rep,
+                delegating_org=getattr(args, "delegating_org", ""),
+                service_partner_name=getattr(args, "service_partner", ""),
+            )
+            pdf_info = _write_minimal_pdf_stdlib(diff_obj, Path(args.out)) if args.out else None
+        if args.json_out:
+            jp = Path(args.json_out)
+            jp.parent.mkdir(parents=True, exist_ok=True)
+            jp.write_text(json.dumps(diff_obj, indent=2, ensure_ascii=False), encoding="utf-8")
+        print(
+            json.dumps(
+                {
+                    "status": "ok",
+                    "mode": "offline_local_diff",
+                    "report_title": diff_obj["report_title"],
+                    "human_summary": diff_obj["stage1_preconsent_diff"].get("status_human_summary", ""),
+                    "stage1_preconsent_diff": diff_obj["stage1_preconsent_diff"],
+                    "sdk_stage_migration_diff": {
+                        "deferred_to_post_consent_sdks": diff_obj["sdk_stage_migration_diff"]["deferred_to_post_consent_sdks"],
+                    },
+                    "roi_closer_card": diff_obj["roi_closer_card"],
+                    "json_out": str(args.json_out) if args.json_out else None,
+                    "pdf_out": pdf_info["pdf_path"] if pdf_info else None,
+                },
+                indent=2,
+                ensure_ascii=False,
+            )
+        )
+        return 0
 
     if args.cmd == "desktop":
         from .desktop import launch_gui, main as desktop_main
@@ -294,18 +580,23 @@ def main() -> None:
 
         q_deadline = time.time() + max(0, int(args.queue_timeout))
         q_attempt = 0
+        sub_fields: dict[str, str] = {
+            "mode": args.mode,
+            "confidential": "true" if args.confidential else "false",
+            "ttl_hours": str(args.ttl),
+            "authorization_attested": "true",
+            "wait": "false",
+        }
+        if getattr(args, "delegating_org", ""):
+            sub_fields["delegating_org"] = str(args.delegating_org).strip()[:64]
+        if getattr(args, "service_partner", ""):
+            sub_fields["service_partner_name"] = str(args.service_partner).strip()[:64]
         while True:
             try:
                 st, sub_resp = client.upload_multipart(
                     "/api/v1/inspect/submit",
                     file_path=apk_p,
-                    fields={
-                        "mode": args.mode,
-                        "confidential": "true" if args.confidential else "false",
-                        "ttl_hours": str(args.ttl),
-                        "authorization_attested": "true",
-                        "wait": "false",
-                    },
+                    fields=sub_fields,
                 )
             except Exception as net_exc:
                 print(json.dumps({"status": "error", "error_code": "ERR_NETWORK_UNAVAILABLE", "message": str(net_exc)}), file=sys.stderr)
@@ -385,6 +676,40 @@ def main() -> None:
     if args.cmd == "reclaim":
         receipt = _reclaim_job(client, args.job_id)
         print(json.dumps({"status": "ok", "reclaim_receipt": receipt}, indent=2, ensure_ascii=False))
+        return
+
+    if args.cmd == "subclients":
+        q_params: dict[str, str] = {"limit": str(max(1, min(int(args.limit or 50), 200)))}
+        if getattr(args, "org", "") and str(args.org).strip():
+            q_params["delegating_org"] = str(args.org).strip()
+        qs = urllib.parse.urlencode(q_params)
+        st, body = client.request_json("GET", f"/api/v1/inspect/subclients?{qs}")
+        if st != 200:
+            print(json.dumps(body, indent=2, ensure_ascii=False), file=sys.stderr)
+            sys.exit(1)
+        if getattr(args, "json", False):
+            print(json.dumps(body, indent=2, ensure_ascii=False))
+            return
+        qs_info = body.get("quota_summary") or {}
+        print(
+            f"=== ClawProbe Agency Multi-Subclient Ledger | Tenant: {body.get('tenant_name') or body.get('tenant_id')} ({qs_info.get('tier')}) ==="
+        )
+        print(
+            f"Credits Remaining: {qs_info.get('total_inspect_credits_remaining')} | "
+            f"Today Used: {qs_info.get('today_inspect_used')}/{qs_info.get('daily_inspect_quota')} | "
+            f"Bound Packages: {qs_info.get('bound_packages_count')}/{qs_info.get('max_unique_packages')} | "
+            f"Expires UTC: {qs_info.get('expires_at_utc') or 'N/A'}"
+        )
+        for grp in body.get("subclient_groups") or []:
+            print(
+                f"\n[委托单位: {grp.get('delegating_org')}] "
+                f"(Total Jobs: {grp.get('total_jobs')}, Completed: {grp.get('completed_jobs')})"
+            )
+            for jb in grp.get("jobs") or []:
+                print(
+                    f"  - {jb.get('job_id')} | {jb.get('package_name')} ({jb.get('apk_filename')}) | "
+                    f"status={jb.get('status')} | pdf={jb.get('report_pdf_endpoint')}"
+                )
         return
 
     if args.cmd == "job":

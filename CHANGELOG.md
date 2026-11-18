@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.3.5-v6.2-90pct-compat] - 2026-11-18
+
+### Cloud Engine Seamless Upgrade (`v6.2-90pct-20261118`)
+- Transitioned the cloud dual-tower attribution & 17-class third-party SDK decoupling baseline to `v6.2-90pct-20261118` (`467,520` known apps, `1,142,318` purified SubCenter anchors, `99.17%` 17-class SDK Micro accuracy).
+- Guaranteed 100% zero-breaking-change backward compatibility for all historical `clawprobe v1.0.0 ~ v1.3.5` CLIs, `clawprobe diff` remediation comparison workflows, GitHub Actions CI gates, and `clawprobe-desktop` GUI clients without requiring client re-installation or credential re-binding.
+
 ## [1.3.2] - 2026-11-05
 
 ### Added

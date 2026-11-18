@@ -14,6 +14,8 @@
 基于 **100% Python 标准库（Zero Third-Party Dependencies）** 构建，内置 **HMAC-SHA256 v2 全报文防重放签名**、**SHA-256 内容寻址 24 小时极速秒传（0 字节免重复上传）** 与 **证书链公钥指纹校验（SPKI Pinning / Embedded CA）**，一行命令或数行 Python 代码即可调用云端 APK 深度解析 API，自动返回包体静态指纹、17 类第三方 SDK 清单、**「用户点击隐私弹窗同意前抢跑联网」** 毫秒级偏移台账、无水印签封 PDF 报告与原始 PCAP 抓包证据包。
 
 > **相关项目**：双塔加密流量在线识别 CLI、FlowSketch 预提取器及边侧 OpenWrt / 核心网 10G 分光探针已独立为 [`876387/janusflow-probe`](https://github.com/876387/janusflow-probe)。两个项目共用同一把 JanusFlow API Key（[自助开通](https://www.atooli.com/#pricing)）。
+>
+> **🟢 云端引擎 `v6.2-90pct-20261118` 无缝兼容声明**：云端双塔流量归因与 17 类第三方 SDK 解耦引擎已热切升级至 `v6.2-90pct-20261118`（`467,520` 款应用、`1,142,318` 个 SubCenter 提纯锚点、17 类 SDK `99.17%` Micro 识别精度）。所有已发布的 `clawprobe v1.0 ~ v1.3.5` CLI、GitHub Actions CI 门禁、`clawprobe diff` 整改前后离线/在线对比流水线以及 Windows/macOS `clawprobe-desktop` 桌面端均 **100% 服务端无缝向后兼容，零客户端改动即可生效**。
 
 ---
 
@@ -24,7 +26,7 @@
    - **Stage 1 (`pre_consent` · 0~60s)**：冷启动静默期（未点击隐私弹窗同意前）网络通信五元组、DNS/SNI 与抢跑联网检测；
    - **Stage 2 (`post_consent` · 60~180s)**：点击同意隐私弹窗后 UI 自动化遍历与第三方 SDK 加密框架清单盘点；
    - **Stage 3 (`background` · 180~300s)**：退后台息屏静默期高频心跳、后台保活唤醒与静默数据上传行为观测。
-3. **标准结构化返回产物**：支持一键导出 `report.json`（完整结构化 APK 解析数据）、`report.pdf`（中英双语技术检测报告）与 `bundle.zip`（含原始 PCAP 抓包与 SHA-256 校验清单）。
+3. **标准结构化返回产物**：支持一键导出 `report.json`（完整结构化 APK 解析数据）、`report.pdf`（中英双语技术分析报告（自查参考））与 `bundle.zip`（含原始 PCAP 抓包与 SHA-256 校验清单）。
 4. **队列拥塞智能指数退避 (Smart Queue Backoff)**：高并发场景下遇 `HTTP 429` 自动在 `--queue-timeout` 窗口内指数退避重试。
 5. **一键 3 遍覆写物理销毁 (`--reclaim`)**：下载完本地 PDF/JSON/ZIP 证据包后，支持自动触发云端工件 3 遍覆写物理清零并返回 SHA-256 销毁回执。
 
@@ -143,7 +145,7 @@ python3 desktop_client/build_windows_exe.py    # 输出 desktop_client/dist/Claw
 ## 合规与安全声明 (Compliance & Security Notice)
 
 1. **合法授权使用**：用户仅可上传并检测其拥有合法著作权或已获明确书面授权的自有 Android 应用包（APK），调用时须显式传入 `--attest-authorized`。
-2. **客观技术留痕**：本工具及云端沙箱输出的检测报告仅客观记录特定运行环境与特定时间窗口内的网络通信五元组、TLS 握手特征及第三方 SDK 特征留痕（`[FL-xxxx]` 锚点），供研发与安全团队开展内部合规自查，不构成任何法律意见或行政/司法鉴定结论。
+2. **客观技术留痕**：本工具及云端沙箱输出的技术分析报告（自查参考）仅客观记录特定运行环境与特定时间窗口内的网络通信五元组、TLS 握手特征及第三方 SDK 特征留痕（`[FL-xxxx]` 锚点），供研发与安全团队开展内部合规自查，不构成任何法律意见或行政/司法鉴定结论。本报告仅供委托方内部自查与整改参考，不属于检验检测机构出具的检验检测报告，不具有对社会的证明作用，不得用于向行政机关、应用市场或任何第三方作证明用途。
 3. **开源许可**：本 API 客户端（`clawprobe`）采用 [Apache-2.0 License](./LICENSE) 开源发布。
 
 ---

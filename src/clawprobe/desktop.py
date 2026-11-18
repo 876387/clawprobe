@@ -22,7 +22,7 @@ Implements all Opus Round 13, 14 & 15 Desktop Client requirements:
   - [macOS Native App Window] Uses a local 127.0.0.1 loopback workbench engine + Chrome/Edge
     standalone `--app=` window (avoiding Apple Tcl/Tk 8.5.9 blank-window compositing bugs on
     macOS Sonoma/Sequoia) with native `osascript` file picker and automatic report download to
-    `~/Desktop/ClawProbe检测报告/`.
+    `~/Desktop/ClawProbe技术分析报告/`.
 """
 
 from __future__ import annotations
@@ -87,7 +87,7 @@ KEYCHAIN_SERVICE = "com.atooli.clawprobe.credentials"
 KEYCHAIN_ACCOUNT = "clawprobe_default"
 CONFIG_DIR = Path.home() / ".clawprobe"
 CONFIG_FILE = CONFIG_DIR / "config.json"
-DEFAULT_REPORT_DIR = Path.home() / "Desktop" / "ClawProbe检测报告"
+DEFAULT_REPORT_DIR = Path.home() / "Desktop" / "ClawProbe技术分析报告"
 
 
 # ============================================================================
@@ -294,8 +294,8 @@ def generate_developer_integration_snippets(creds: dict[str, Any]) -> dict[str, 
         f"clawprobe --endpoint {endpoint} analyze ./your_app.apk \\\n"
         f"  --attest-authorized \\\n"
         f"  --mode privacy \\\n"
-        f"  --out ~/Desktop/ClawProbe检测报告/report.pdf \\\n"
-        f"  --bundle ~/Desktop/ClawProbe检测报告/evidence_bundle.zip\n"
+        f"  --out ~/Desktop/ClawProbe技术分析报告/report.pdf \\\n"
+        f"  --bundle ~/Desktop/ClawProbe技术分析报告/evidence_bundle.zip\n"
     )
     py_snippet = (
         "import os\n"
@@ -536,7 +536,7 @@ DESKTOP_HTML = """<!DOCTYPE html>
 
   <div id="tab-main" class="container">
     <div class="card">
-      <div style="font-weight:600; margin-bottom:8px; color:#e2e8f0;">第一步：选择待检测的 Android APK 安装包（报告自动保存至 <code>~/Desktop/ClawProbe检测报告/</code>）</div>
+      <div style="font-weight:600; margin-bottom:8px; color:#e2e8f0;">第一步：选择待检测的 Android APK 安装包（报告自动保存至 <code>~/Desktop/ClawProbe技术分析报告/</code>）</div>
       <div class="apk-picker">
         <input id="apkPathInput" class="input" style="margin:0; flex:1;" placeholder="点击右侧按钮选择本地 .apk 文件，或直接粘贴本地 APK 完整路径" oninput="selectedApk = this.value.trim();" />
         <button class="btn btn-primary" onclick="pickApkNative()">📂 选择本地 APK 文件</button>
@@ -858,7 +858,7 @@ async function openReportDir() {
 }
 
 window.addEventListener("DOMContentLoaded", async () => {
-  appendLog("JanusFlow Desktop v1.2 (雅努斯流 · ClawProbe CLI GUI) 已就绪。报告默认输出目录：~/Desktop/ClawProbe检测报告/");
+  appendLog("JanusFlow Desktop v1.2 (雅努斯流 · ClawProbe CLI GUI) 已就绪。报告默认输出目录：~/Desktop/ClawProbe技术分析报告/");
   await refreshState();
 });
 </script>

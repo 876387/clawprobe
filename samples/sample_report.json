@@ -1,8 +1,8 @@
 {
-  "report_title": "移动应用网络行为与加密流量技术检测分析报告",
+  "report_title": "移动应用网络通联与隐私合规技术分析报告（自查参考）",
   "report_metadata": {
     "job_id": "cn_apk_1793422495_982f1454",
-    "report_classification": "技术检测分析报告 (Technical Detection & Traffic Analysis Report)",
+    "report_classification": "技术分析报告（自查参考） (Technical Analysis & Self-Check Reference Report)",
     "inspect_mode": "privacy",
     "privacy_tier": "PUBLIC_SHARED",
     "ttl_hours": 72,
@@ -21,7 +21,7 @@
       "audit_event_id": "evt_1793422495159_f8f9e04c",
       "audit_chain_hash": "65b91c12d7a9a0861b8bf7e1ec547e0c8cc06ca066b640a2fdd934e9d5cbe473"
     },
-    "compliance_disclaimer": "【合规声明与技术免责条款】本文件为自动化受控沙箱环境生成的《技术检测分析报告》，仅客观记录被测移动应用在当次测试窗口（300 秒三阶段）内的网络通联技术参数、数据包摘要与加密流量包络特征研判线索，仅供企业研发隐私合规自查、网络安全技术分析或向具备相应法定资质的第三方机构提供客观技术数据支撑参考。本服务提供方非公检法机关或法定检验检测鉴定机构，本报告仅作技术分析参考，不构成亦不替代任何法定检验意见或法律证明文件。"
+    "compliance_disclaimer": "【合规声明与技术免责条款】本文件为自动化受控沙箱环境生成的《技术分析报告》，仅客观记录被测移动应用在当次测试窗口（300 秒三阶段）内的网络通联技术参数、数据包摘要与加密流量包络特征研判线索，仅供企业研发隐私合规自查、网络安全技术分析或向具备相应法定资质的第三方机构提供客观技术数据支撑参考。本服务提供方非公检法机关或法定检验检测鉴定机构，本报告仅作技术分析参考，不构成亦不替代任何法定检验意见或法律证明文件。本报告仅供委托方内部自查与整改参考，不属于检验检测机构出具的检验检测报告，不具有对社会的证明作用，不得用于向行政机关、应用市场或任何第三方作证明用途。"
   },
   "static_apk_profile": {
     "job_id": "cn_apk_1793422495_982f1454",

@@ -1,6 +1,9 @@
 import hashlib
+import json
+import os
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -106,6 +109,88 @@ class TestClawProbeOffline(unittest.TestCase):
         )
         self.assertIn('"status": "ok"', proc_script.stdout)
 
+    def test_standalone_offline_diff_cli(self):
+        before_doc = {
+            "layer1_deterministic_network_ledger": {
+                "summary": {"pre_consent_flow_count": 2},
+                "pre_consent_flow_anchors": ["FL-1", "FL-2"],
+                "flows": [
+                    {
+                        "flow_id": "FL-1",
+                        "pre_consent_flow": True,
+                        "stage_first_seen": 1,
+                        "stages_active": [1, 2],
+                        "effective_domain": "cnlogs.umeng.com",
+                        "matched_sdk": "SDK::Umeng_Analytics (友盟+统计)",
+                    },
+                    {
+                        "flow_id": "FL-2",
+                        "pre_consent_flow": True,
+                        "stage_first_seen": 1,
+                        "stages_active": [1],
+                        "effective_domain": "stats.jpush.cn",
+                        "matched_sdk": "SDK::JPush_Aurora (极光推送)",
+                    },
+                ],
+            }
+        }
+        after_doc = {
+            "layer1_deterministic_network_ledger": {
+                "summary": {"pre_consent_flow_count": 0},
+                "pre_consent_flow_anchors": [],
+                "flows": [
+                    {
+                        "flow_id": "FL-1",
+                        "pre_consent_flow": False,
+                        "stage_first_seen": 2,
+                        "stages_active": [2],
+                        "effective_domain": "cnlogs.umeng.com",
+                        "matched_sdk": "SDK::Umeng_Analytics (友盟+统计)",
+                    }
+                ],
+            }
+        }
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            b_file = tmp_path / "before.json"
+            a_file = tmp_path / "after.json"
+            out_pdf = tmp_path / "diff.pdf"
+            out_json = tmp_path / "diff.json"
+            b_file.write_text(json.dumps(before_doc, ensure_ascii=False), encoding="utf-8")
+            a_file.write_text(json.dumps(after_doc, ensure_ascii=False), encoding="utf-8")
+
+            proc = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "clawprobe",
+                    "diff",
+                    "--before",
+                    str(b_file),
+                    "--after",
+                    str(a_file),
+                    "--out",
+                    str(out_pdf),
+                    "--json-out",
+                    str(out_json),
+                ],
+                cwd=str(tmp_path),
+                env={"PATH": os.environ.get("PATH", ""), "PYTHONPATH": str(SRC_DIR)},
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            self.assertEqual(proc.returncode, 0)
+            self.assertIn("STAGE1_CLEARED", proc.stdout)
+            self.assertTrue(out_pdf.exists())
+            self.assertTrue(out_json.exists())
+            parsed = json.loads(out_json.read_text(encoding="utf-8"))
+            self.assertEqual(parsed["stage1_preconsent_diff"]["status_tag"], "STAGE1_CLEARED")
+            self.assertIn(
+                "SDK::Umeng_Analytics (友盟+统计)",
+                parsed["sdk_stage_migration_diff"]["deferred_to_post_consent_sdks"],
+            )
+
     def test_zero_internal_ip_or_secret_leakage(self):
         forbidden_tokens = [
             "192.168.",
@@ -115,6 +200,8 @@ class TestClawProbeOffline(unittest.TestCase):
             "172.30.",
             "4060",
             "5000",
+            "gateway_",
+            "clawinsight",
             "arm11",
             "cn_arm",
             "node11",
